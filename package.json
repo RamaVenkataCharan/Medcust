@@ -1,0 +1,11 @@
+{
+  "name": "medtrack-root",
+  "version": "1.0.0",
+  "description": "MedTrack — Medical Shop Customer & Dues Management System",
+  "scripts": {
+    "start:server": "cd server && npm start",
+    "start:client": "cd client && npm run dev",
+    "seed": "cd server && npm run seed",
+    "build:client": "cd client && npm run build"
+  }
+}
