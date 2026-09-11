@@ -64,6 +64,38 @@ export const api = {
   },
   triggerBackup: () => fetch(`${API_BASE}/reports/backup`, { method: 'POST' }).then(handleResponse),
   getBackups: () => fetch(`${API_BASE}/reports/backups`).then(handleResponse),
+
+  // Courtesy Due Reminders (WhatsApp / SMS)
+  getReminderSummary: () =>
+    fetch(`${API_BASE}/reminders/summary`).then(handleResponse),
+  getCustomerReminders: (customerId) =>
+    fetch(`${API_BASE}/reminders/customer/${customerId}`).then(handleResponse),
+  toggleReminder: (customerId, enabled) =>
+    fetch(`${API_BASE}/reminders/toggle`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customerId, enabled }),
+    }).then(handleResponse),
+  pauseReminder: (customerId, days, untilDate) =>
+    fetch(`${API_BASE}/reminders/pause`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customerId, days, untilDate }),
+    }).then(handleResponse),
+  previewReminder: (customerId, language = 'hinglish') =>
+    fetch(`${API_BASE}/reminders/preview?customerId=${customerId}&language=${encodeURIComponent(language)}`).then(handleResponse),
+  sendReminderNow: (customerId, language = 'hinglish', forceStage = 'MANUAL') =>
+    fetch(`${API_BASE}/reminders/send-now`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customerId, language, forceStage }),
+    }).then(handleResponse),
+  runReminderCycle: (bypassQuietHours = false) =>
+    fetch(`${API_BASE}/reminders/run-job`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bypassQuietHours }),
+    }).then(handleResponse),
 };
 
 export default api;

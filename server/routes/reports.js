@@ -1,6 +1,13 @@
 const express = require('express');
 const router = express.Router();
-const { getDb, getCustomerDue } = require('../db/database');
+const {
+  getDb,
+  getCustomerDue,
+  getReminderSettings,
+  getOldestUnpaidEntry,
+  getRemindersSentForDueCycle,
+} = require('../db/database');
+const reminderConfig = require('../services/reminderConfig');
 const { performBackup, listBackups } = require('../services/backupService');
 
 /**
@@ -33,16 +40,49 @@ router.get('/dues', (req, res) => {
       FROM customers c
     `).all();
 
-    // Compute derived total_due for each customer
+    // Compute derived total_due and reminder metadata for each debtor
     let debtors = customers
       .map((c) => {
         const totalDue = getCustomerDue(c.customer_id);
+        if (totalDue <= 0) return null;
+
+        const reminderSettings = getReminderSettings(c.customer_id);
+        const oldestUnpaid = getOldestUnpaidEntry(c.customer_id);
+        const cycleReminders = getRemindersSentForDueCycle(c.customer_id);
+        const lastReminder = cycleReminders.length > 0 ? cycleReminders[cycleReminders.length - 1] : null;
+
+        // Next scheduled stage
+        let nextStage = null;
+        if (reminderSettings.reminders_enabled && cycleReminders.length < reminderConfig.maxRemindersPerDue && oldestUnpaid) {
+          const sentStages = cycleReminders.map((r) => r.scheduled_stage);
+          for (const s of reminderConfig.scheduleStages) {
+            if (oldestUnpaid.daysSinceDue >= s.daysAfterDue && !sentStages.includes(s.stage)) {
+              nextStage = s.stage;
+              break;
+            }
+          }
+        }
+
         return {
           ...c,
           total_due: totalDue,
+          reminder_settings: reminderSettings,
+          oldest_unpaid_date: oldestUnpaid?.entryDate || null,
+          days_since_due: oldestUnpaid?.daysSinceDue || 0,
+          reminders_sent_count: cycleReminders.length,
+          max_reminders: reminderConfig.maxRemindersPerDue,
+          last_reminder: lastReminder
+            ? {
+                channel: lastReminder.channel,
+                sent_at: lastReminder.sent_at,
+                stage: lastReminder.scheduled_stage,
+                delivery_status: lastReminder.delivery_status,
+              }
+            : null,
+          next_stage: nextStage,
         };
       })
-      .filter((c) => c.total_due > 0);
+      .filter(Boolean);
 
     // Filter by village if provided
     if (village && village.trim()) {

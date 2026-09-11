@@ -4,9 +4,10 @@ import { ToastProvider } from './components/Toast';
 import Home from './pages/Home';
 import CustomerProfile from './pages/CustomerProfile';
 import DuesReport from './pages/DuesReport';
+import RecoveryDashboard from './pages/RecoveryDashboard';
 
 export default function App() {
-  const [currentView, setCurrentView] = useState('home'); // 'home' | 'profile' | 'dues'
+  const [currentView, setCurrentView] = useState('home'); // 'home' | 'profile' | 'dues' | 'recovery'
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
 
   const handleSelectCustomer = (customer) => {
@@ -49,6 +50,10 @@ export default function App() {
             <DuesReport
               onSelectCustomer={handleSelectCustomer}
             />
+          )}
+
+          {currentView === 'recovery' && (
+            <RecoveryDashboard />
           )}
         </main>
 
