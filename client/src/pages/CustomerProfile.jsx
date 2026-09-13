@@ -16,6 +16,7 @@ import PaymentForm from '../components/PaymentForm';
 import { api } from '../utils/api';
 import { useToast } from '../components/Toast';
 import { formatDate, formatCurrency } from '../utils/formatting';
+import confetti from 'canvas-confetti';
 
 export default function CustomerProfile({ customerId, onBackToSearch }) {
   const { addToast } = useToast();
@@ -76,19 +77,45 @@ export default function CustomerProfile({ customerId, onBackToSearch }) {
 
   const handleEntrySuccess = (newEntry) => {
     fetchCustomerData();
+    if (newEntry?.dueAmount === 0 && customer?.total_due === 0) {
+      try {
+        confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
+      } catch {}
+    }
   };
 
   const handlePaymentSuccess = (paymentRes) => {
     fetchCustomerData();
+    if (paymentRes?.remainingDue === 0) {
+      try {
+        confetti({
+          particleCount: 80,
+          spread: 70,
+          origin: { y: 0.6 },
+          colors: ['#4f46e5', '#10b981', '#f59e0b', '#3b82f6'],
+        });
+      } catch {}
+    }
   };
 
   if (loading && !customer) {
     return (
-      <div className="flex items-center justify-center min-h-[50vh]">
-        <div className="flex flex-col items-center gap-2.5 text-slate-500">
-          <div className="w-8 h-8 border-3 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-          <span className="text-xs font-medium">Loading customer khata ledger...</span>
+      <div className="max-w-5xl mx-auto space-y-6 animate-pulse">
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-4">
+          <div className="flex justify-between items-center">
+            <div className="h-4 w-24 bg-slate-200 rounded-lg"></div>
+            <div className="h-4 w-32 bg-slate-200 rounded-lg"></div>
+          </div>
+          <div className="flex justify-between items-center pt-2">
+            <div className="space-y-2">
+              <div className="h-7 w-48 bg-slate-200 rounded-lg"></div>
+              <div className="h-4 w-64 bg-slate-200 rounded-lg"></div>
+            </div>
+            <div className="h-10 w-28 bg-slate-200 rounded-xl"></div>
+          </div>
         </div>
+        <div className="h-12 bg-white rounded-2xl border border-slate-200"></div>
+        <div className="h-64 bg-white rounded-2xl border border-slate-200"></div>
       </div>
     );
   }

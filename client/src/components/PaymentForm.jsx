@@ -96,12 +96,11 @@ export default function PaymentForm({ isOpen, onClose, customer, onSuccess }) {
           <div className="relative">
             <span className="absolute left-3 top-2.5 text-slate-400 text-sm">₹</span>
             <input
-              type="number"
-              step="any"
-              min="0.01"
+              type="text"
+              inputMode="decimal"
               required
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ''))}
               placeholder="0.00"
               className="w-full pl-8 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-base font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:bg-white"
             />

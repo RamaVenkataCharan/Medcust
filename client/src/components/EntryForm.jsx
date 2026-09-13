@@ -74,8 +74,9 @@ export default function EntryForm({ isOpen, onClose, customer, onSuccess }) {
   };
 
   const handlePriceChange = (index, value) => {
+    const clean = value.replace(/[^\d.]/g, '');
     const updated = [...medicines];
-    updated[index].price = value;
+    updated[index].price = clean;
     setMedicines(updated);
   };
 
@@ -280,14 +281,13 @@ export default function EntryForm({ isOpen, onClose, customer, onSuccess }) {
                 )}
               </div>
               <input
-                type="number"
-                step="any"
-                min="0.01"
+                type="text"
+                inputMode="decimal"
                 required
                 value={isManualTotal ? totalAmountInput : (sumOfPrices > 0 ? String(sumOfPrices) : totalAmountInput)}
                 onChange={(e) => {
                   setIsManualTotal(true);
-                  setTotalAmountInput(e.target.value);
+                  setTotalAmountInput(e.target.value.replace(/[^\d.]/g, ''));
                 }}
                 placeholder="0.00"
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:bg-white"
@@ -298,11 +298,10 @@ export default function EntryForm({ isOpen, onClose, customer, onSuccess }) {
             <div>
               <label className="block font-bold text-slate-700 mb-1">Amount Paid Now (₹)</label>
               <input
-                type="number"
-                step="any"
-                min="0"
+                type="text"
+                inputMode="decimal"
                 value={amountPaid}
-                onChange={(e) => setAmountPaid(e.target.value)}
+                onChange={(e) => setAmountPaid(e.target.value.replace(/[^\d.]/g, ''))}
                 placeholder={computedTotal > 0 ? String(computedTotal) : '0.00'}
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:bg-white"
               />
@@ -337,6 +336,28 @@ export default function EntryForm({ isOpen, onClose, customer, onSuccess }) {
             <span className="text-sm font-bold font-mono">{formatCurrency(liveDue)}</span>
           </div>
 
+          {/* Inline Validation Warnings */}
+          {medicines.every((m) => !m.name.trim()) && (
+            <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2 text-amber-800 text-[11px] font-medium">
+              <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+              <span>Please enter at least one medicine item name above.</span>
+            </div>
+          )}
+
+          {computedTotal <= 0 && medicines.some((m) => m.name.trim()) && (
+            <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2 text-amber-800 text-[11px] font-medium">
+              <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+              <span>Total bill amount must be greater than ₹0. Enter medicine prices or total amount.</span>
+            </div>
+          )}
+
+          {isOverpaid && (
+            <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2 text-rose-800 text-[11px] font-medium">
+              <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+              <span>Amount paid ({formatCurrency(parsedPaid)}) cannot exceed total bill amount ({formatCurrency(computedTotal)}).</span>
+            </div>
+          )}
+
           {/* Date Picker */}
           <div>
             <label className="block font-semibold text-slate-600 mb-1 text-[11px]">Visit Date</label>
@@ -359,7 +380,7 @@ export default function EntryForm({ isOpen, onClose, customer, onSuccess }) {
             </button>
             <button
               type="submit"
-              disabled={isSubmitting || computedTotal <= 0 || isOverpaid}
+              disabled={isSubmitting || computedTotal <= 0 || isOverpaid || medicines.every((m) => !m.name.trim())}
               className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-xs transition-colors disabled:opacity-50 flex items-center gap-2"
             >
               {isSubmitting ? (

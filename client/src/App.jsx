@@ -1,14 +1,43 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Header from './components/Header';
 import { ToastProvider } from './components/Toast';
 import Home from './pages/Home';
 import CustomerProfile from './pages/CustomerProfile';
 import DuesReport from './pages/DuesReport';
-import RecoveryDashboard from './pages/RecoveryDashboard';
+import PinLockModal from './components/PinLockModal';
+
+const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes auto-lock
 
 export default function App() {
-  const [currentView, setCurrentView] = useState('home'); // 'home' | 'profile' | 'dues' | 'recovery'
+  const [currentView, setCurrentView] = useState('home'); // 'home' | 'profile' | 'dues'
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
+  const [isLocked, setIsLocked] = useState(true);
+  const timerRef = useRef(null);
+
+  // Inactivity Auto-Lock
+  const resetInactivityTimer = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      setIsLocked(true);
+    }, INACTIVITY_TIMEOUT_MS);
+  };
+
+  useEffect(() => {
+    const handleUserActivity = () => {
+      if (!isLocked) {
+        resetInactivityTimer();
+      }
+    };
+
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'];
+    events.forEach((evt) => window.addEventListener(evt, handleUserActivity, { passive: true }));
+    resetInactivityTimer();
+
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      events.forEach((evt) => window.removeEventListener(evt, handleUserActivity));
+    };
+  }, [isLocked]);
 
   const handleSelectCustomer = (customer) => {
     setSelectedCustomerId(customer.customer_id);
@@ -28,6 +57,7 @@ export default function App() {
           currentView={currentView}
           setCurrentView={setCurrentView}
           onBackToSearch={handleBackToSearch}
+          onLock={() => setIsLocked(true)}
         />
 
         {/* Main Content View */}
@@ -51,11 +81,16 @@ export default function App() {
               onSelectCustomer={handleSelectCustomer}
             />
           )}
-
-          {currentView === 'recovery' && (
-            <RecoveryDashboard />
-          )}
         </main>
+
+        {/* Security PIN Gate Modal */}
+        <PinLockModal
+          isLocked={isLocked}
+          onUnlock={() => {
+            setIsLocked(false);
+            resetInactivityTimer();
+          }}
+        />
 
         {/* Footer */}
         <footer className="border-t border-slate-200 bg-white py-3.5 px-6 text-center text-xs text-slate-400">

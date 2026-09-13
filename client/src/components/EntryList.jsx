@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronDown, ChevronUp, Printer, Receipt, Calendar, ArrowRight } from 'lucide-react';
+import { ChevronDown, ChevronUp, Printer, Receipt, Calendar, ArrowRight, Share2 } from 'lucide-react';
 import { formatDate, formatCurrency } from '../utils/formatting';
 
 export default function EntryList({ entries, totalCount, page, totalPages, onPageChange, onAddPurchase }) {
@@ -71,29 +71,30 @@ export default function EntryList({ entries, totalCount, page, totalPages, onPag
                 </div>
 
                 {/* Right side: Amounts and Actions */}
-                <div className="flex items-center gap-4 text-right flex-shrink-0">
+                <div className="flex items-center gap-3.5 text-right flex-shrink-0">
                   <div>
                     <div className="text-sm font-bold font-mono text-slate-900">
                       {formatCurrency(entry.total_amount)}
                     </div>
                     <div className="flex items-center justify-end gap-2 text-[11px]">
-                      <span className="text-emerald-700 font-mono">Paid: {formatCurrency(entry.amount_paid)}</span>
+                      <span className="text-emerald-700 font-mono font-medium">Paid: {formatCurrency(entry.amount_paid)}</span>
                       {dueCreated > 0 && (
-                        <span className="text-amber-800 font-bold font-mono bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200">
+                        <span className="text-amber-800 font-bold font-mono bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
                           Due: {formatCurrency(dueCreated)}
                         </span>
                       )}
                     </div>
                   </div>
 
-                  {/* Print bill button */}
+                  {/* Print / Share Bill button */}
                   <button
                     type="button"
                     onClick={(e) => handlePrint(e, entry.entry_id)}
-                    className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                    title="Print PDF Bill"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 rounded-lg transition-all text-xs font-semibold shadow-2xs"
+                    title="Print or share PDF bill"
                   >
-                    <Printer className="w-4 h-4" />
+                    <Printer className="w-3.5 h-3.5 text-indigo-600" />
+                    <span className="hidden sm:inline">Print Bill</span>
                   </button>
 
                   <div className="text-slate-400 pl-1">

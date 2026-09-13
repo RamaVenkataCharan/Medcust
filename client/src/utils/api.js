@@ -3,14 +3,19 @@ const API_BASE = '/api';
 async function handleResponse(res) {
   if (!res.ok) {
     let errorMsg = 'An unexpected error occurred';
+    let data = {};
     try {
-      const data = await res.json();
+      data = await res.json();
       errorMsg = data.error || errorMsg;
     } catch {
-      errorMsg = await res.text() || res.statusText;
+      errorMsg = (await res.text()) || res.statusText;
     }
     const err = new Error(errorMsg);
     err.status = res.status;
+    err.data = data;
+    if (data.existingCustomer) {
+      err.existingCustomer = data.existingCustomer;
+    }
     throw err;
   }
   return res.json();
@@ -62,40 +67,17 @@ export const api = {
     const query = new URLSearchParams(params).toString();
     return fetch(`${API_BASE}/reports/dues?${query}`).then(handleResponse);
   },
+  getStats: () => fetch(`${API_BASE}/reports/stats`).then(handleResponse),
   triggerBackup: () => fetch(`${API_BASE}/reports/backup`, { method: 'POST' }).then(handleResponse),
   getBackups: () => fetch(`${API_BASE}/reports/backups`).then(handleResponse),
-
-  // Courtesy Due Reminders (WhatsApp / SMS)
-  getReminderSummary: () =>
-    fetch(`${API_BASE}/reminders/summary`).then(handleResponse),
-  getCustomerReminders: (customerId) =>
-    fetch(`${API_BASE}/reminders/customer/${customerId}`).then(handleResponse),
-  toggleReminder: (customerId, enabled) =>
-    fetch(`${API_BASE}/reminders/toggle`, {
+  restoreBackup: (filename) =>
+    fetch(`${API_BASE}/reports/restore`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ customerId, enabled }),
+      body: JSON.stringify({ filename }),
     }).then(handleResponse),
-  pauseReminder: (customerId, days, untilDate) =>
-    fetch(`${API_BASE}/reminders/pause`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ customerId, days, untilDate }),
-    }).then(handleResponse),
-  previewReminder: (customerId, language = 'hinglish') =>
-    fetch(`${API_BASE}/reminders/preview?customerId=${customerId}&language=${encodeURIComponent(language)}`).then(handleResponse),
-  sendReminderNow: (customerId, language = 'hinglish', forceStage = 'MANUAL') =>
-    fetch(`${API_BASE}/reminders/send-now`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ customerId, language, forceStage }),
-    }).then(handleResponse),
-  runReminderCycle: (bypassQuietHours = false) =>
-    fetch(`${API_BASE}/reminders/run-job`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bypassQuietHours }),
-    }).then(handleResponse),
+  getExportCsvUrl: () => `${API_BASE}/reports/export/csv`,
+  getExportSqliteUrl: () => `${API_BASE}/reports/export/sqlite`,
 };
 
 export default api;

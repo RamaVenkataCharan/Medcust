@@ -44,7 +44,16 @@ export default function Home({ onSelectCustomer, onOpenDuesReport }) {
       setIsAddModalOpen(false);
       onSelectCustomer(created);
     } catch (err) {
-      addToast(err.message, 'error');
+      if (err.existingCustomer) {
+        addToast(
+          `Customer already registered with phone ${cleanPhone}. Opened existing khata ledger.`,
+          'info'
+        );
+        setIsAddModalOpen(false);
+        onSelectCustomer(err.existingCustomer);
+      } else {
+        addToast(err.message, 'error');
+      }
     } finally {
       setIsSubmitting(false);
     }
