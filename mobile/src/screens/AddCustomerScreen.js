@@ -14,6 +14,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, FONTS } from '../constants/theme';
 import { addCustomer, getCustomerByPhone } from '../db/database';
+import { cleanPhoneNumber } from '../utils/khataLogic';
 
 export default function AddCustomerScreen({ navigation, route }) {
   const initialValue = route.params?.initialPhoneOrName || '';
@@ -27,7 +28,7 @@ export default function AddCustomerScreen({ navigation, route }) {
 
   const handleSave = () => {
     const trimmedName = name.trim();
-    const cleanPhone = phone.replace(/\D/g, '');
+    const cleanPhone = cleanPhoneNumber(phone);
 
     if (!trimmedName) {
       Alert.alert('Name Required', 'Please enter customer name.');
