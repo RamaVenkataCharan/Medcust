@@ -5,18 +5,22 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   ScrollView,
   Alert,
   KeyboardAvoidingView,
   Platform,
+  StatusBar,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, FONTS } from '../constants/theme';
 import { addPurchaseEntry, getPastMedicineNames } from '../db/database';
 import { calculateEntryDue } from '../utils/khataLogic';
 
 export default function AddPurchaseScreen({ route, navigation }) {
+  const insets = useSafeAreaInsets();
+  const topInset = Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight || 28) : 24);
+
   const { customerId, customerName } = route.params;
 
   // Medicine list: array of { id, name, price }
@@ -106,23 +110,36 @@ export default function AddPurchaseScreen({ route, navigation }) {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
       >
         {/* Nav Bar */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-            <Ionicons name="arrow-back" size={24} color={COLORS.textPrimary} />
+        <View style={[styles.header, { paddingTop: topInset + SPACING.sm }]}>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={styles.backBtn}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            activeOpacity={0.6}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
+            <Ionicons name="arrow-back" size={26} color={COLORS.textPrimary} />
           </TouchableOpacity>
-          <View>
+          <View style={{ flex: 1 }}>
             <Text style={styles.title}>New Purchase</Text>
             <Text style={styles.subtitle}>For {customerName}</Text>
           </View>
         </View>
 
-        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingBottom: Math.max(insets.bottom, SPACING.xxxl) + 20 },
+          ]}
+          keyboardShouldPersistTaps="handled"
+        >
           {/* Quick Suggestions Chips */}
           {pastSuggestions.length > 0 && (
             <View style={styles.suggestionsContainer}>
@@ -240,7 +257,7 @@ export default function AddPurchaseScreen({ route, navigation }) {
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -252,12 +269,15 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: SPACING.xl,
-    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.md,
+    paddingBottom: SPACING.sm,
   },
   backBtn: {
-    marginRight: SPACING.md,
-    padding: SPACING.xs,
+    width: 48,
+    height: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: SPACING.xs,
   },
   title: {
     ...FONTS.title,

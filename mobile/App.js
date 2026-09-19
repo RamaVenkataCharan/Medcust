@@ -4,6 +4,8 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
 
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+
 import { initDatabase } from './src/db/database';
 import { COLORS } from './src/constants/theme';
 import HomeScreen from './src/screens/HomeScreen';
@@ -34,7 +36,8 @@ export default function App() {
   }
 
   return (
-    <NavigationContainer>
+    <SafeAreaProvider>
+      <NavigationContainer>
       <StatusBar style="dark" backgroundColor={COLORS.background} />
       <Stack.Navigator
         initialRouteName="Home"
@@ -50,6 +53,7 @@ export default function App() {
         <Stack.Screen name="AddPurchase" component={AddPurchaseScreen} />
       </Stack.Navigator>
     </NavigationContainer>
+    </SafeAreaProvider>
   );
 }
 

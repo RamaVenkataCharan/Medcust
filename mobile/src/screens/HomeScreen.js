@@ -6,21 +6,29 @@ import {
   FlatList,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   StatusBar,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, FONTS } from '../constants/theme';
 import { searchCustomers, getActiveDriverName } from '../db/database';
 import { exportKhataBackup } from '../services/exportService';
 
 export default function HomeScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
+  const topInset = Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight || 28) : 24);
+
   const [query, setQuery] = useState('');
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+
+  useEffect(() => {
+    console.log(`[MedTrack] Storage driver active: ${getActiveDriverName()}`);
+  }, []);
 
   const loadData = useCallback(() => {
     try {
@@ -84,16 +92,14 @@ export default function HomeScreen({ navigation }) {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
 
       {/* Notebook Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: topInset + SPACING.sm }]}>
         <View>
           <Text style={styles.appTitle}>MedTrack</Text>
-          <Text style={styles.appSubtitle}>
-            Medical Khata Book • {getActiveDriverName().includes('SQLITE') ? 'Native SQLite' : 'Web Fallback'}
-          </Text>
+          <Text style={styles.appSubtitle}>Medical Khata Book</Text>
         </View>
 
         <TouchableOpacity
@@ -161,7 +167,10 @@ export default function HomeScreen({ navigation }) {
           data={customers}
           keyExtractor={(item) => String(item.customer_id)}
           renderItem={renderCustomerItem}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[
+            styles.listContent,
+            { paddingBottom: Math.max(insets.bottom, 24) + 120 },
+          ]}
           showsVerticalScrollIndicator={false}
         />
       )}
@@ -169,7 +178,10 @@ export default function HomeScreen({ navigation }) {
       {/* Floating Add Customer Button */}
       {customers.length > 0 && (
         <TouchableOpacity
-          style={styles.fab}
+          style={[
+            styles.fab,
+            { bottom: Math.max(insets.bottom, 24) + SPACING.xxl },
+          ]}
           activeOpacity={0.85}
           onPress={() => navigation.navigate('AddCustomer', { initialPhoneOrName: query.trim() })}
         >
@@ -177,7 +189,7 @@ export default function HomeScreen({ navigation }) {
           <Text style={styles.fabText}>+ Add Customer</Text>
         </TouchableOpacity>
       )}
-    </SafeAreaView>
+    </View>
   );
 }
 

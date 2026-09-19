@@ -5,18 +5,22 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   ScrollView,
   Alert,
   KeyboardAvoidingView,
   Platform,
+  StatusBar,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, FONTS } from '../constants/theme';
 import { addCustomer, getCustomerByPhone } from '../db/database';
 import { cleanPhoneNumber } from '../utils/khataLogic';
 
 export default function AddCustomerScreen({ navigation, route }) {
+  const insets = useSafeAreaInsets();
+  const topInset = Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight || 28) : 24);
+
   const initialValue = route.params?.initialPhoneOrName || '';
   const isNumericInitial = /^\d+$/.test(initialValue);
 
@@ -79,19 +83,32 @@ export default function AddCustomerScreen({ navigation, route }) {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
       >
-        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-          <View style={styles.header}>
-            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-              <Ionicons name="arrow-back" size={24} color={COLORS.textPrimary} />
-            </TouchableOpacity>
-            <Text style={styles.title}>New Customer</Text>
-          </View>
+        <View style={[styles.header, { paddingTop: topInset + SPACING.sm }]}>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={styles.backBtn}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            activeOpacity={0.6}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
+            <Ionicons name="arrow-back" size={26} color={COLORS.textPrimary} />
+          </TouchableOpacity>
+          <Text style={styles.title}>New Customer</Text>
+        </View>
 
+        <ScrollView
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingBottom: Math.max(insets.bottom, SPACING.xxxl) + 20 },
+          ]}
+          keyboardShouldPersistTaps="handled"
+        >
           {/* Form Card */}
           <View style={styles.formCard}>
             <View style={styles.inputGroup}>
@@ -159,7 +176,7 @@ export default function AddCustomerScreen({ navigation, route }) {
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -168,17 +185,22 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
-  scrollContent: {
-    padding: SPACING.xl,
-  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: SPACING.xl,
+    paddingHorizontal: SPACING.md,
+    paddingBottom: SPACING.sm,
   },
   backBtn: {
-    marginRight: SPACING.md,
-    padding: SPACING.xs,
+    width: 48,
+    height: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: SPACING.xs,
+  },
+  scrollContent: {
+    paddingHorizontal: SPACING.xl,
+    paddingTop: SPACING.sm,
   },
   title: {
     ...FONTS.title,

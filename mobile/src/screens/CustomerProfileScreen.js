@@ -5,13 +5,15 @@ import {
   FlatList,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   ActivityIndicator,
   Modal,
   TextInput,
   Alert,
+  Platform,
+  StatusBar,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, FONTS } from '../constants/theme';
 import { getCustomerById, getCustomerLedger, addDuePayment } from '../db/database';
@@ -19,6 +21,9 @@ import { formatLocalDateTime } from '../utils/dateUtils';
 import { isPaymentEntry } from '../utils/khataLogic';
 
 export default function CustomerProfileScreen({ route, navigation }) {
+  const insets = useSafeAreaInsets();
+  const topInset = Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight || 28) : 24);
+
   const { customerId } = route.params;
 
   const [customer, setCustomer] = useState(null);
@@ -74,9 +79,9 @@ export default function CustomerProfileScreen({ route, navigation }) {
 
   if (loading || !customer) {
     return (
-      <SafeAreaView style={styles.centered}>
+      <View style={styles.centered}>
         <ActivityIndicator size="large" color={COLORS.primary} />
-      </SafeAreaView>
+      </View>
     );
   }
 
@@ -153,11 +158,18 @@ export default function CustomerProfileScreen({ route, navigation }) {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       {/* Top Header */}
-      <View style={styles.navBar}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={24} color={COLORS.textPrimary} />
+      <View style={[styles.navBar, { paddingTop: topInset + SPACING.sm }]}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.backBtn}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          activeOpacity={0.6}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <Ionicons name="arrow-back" size={26} color={COLORS.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.navTitle} numberOfLines={1}>
           {customer.name}
@@ -223,13 +235,16 @@ export default function CustomerProfileScreen({ route, navigation }) {
           data={ledger}
           keyExtractor={(item) => String(item.entry_id)}
           renderItem={renderLedgerItem}
-          contentContainerStyle={styles.ledgerListContent}
+          contentContainerStyle={[
+            styles.ledgerListContent,
+            { paddingBottom: Math.max(insets.bottom, SPACING.md) + 80 },
+          ]}
           showsVerticalScrollIndicator={false}
         />
       )}
 
       {/* Bottom Floating Add Purchase Action */}
-      <View style={styles.bottomBar}>
+      <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, SPACING.md) }]}>
         <TouchableOpacity
           style={styles.addPurchaseBtn}
           activeOpacity={0.85}
@@ -281,7 +296,7 @@ export default function CustomerProfileScreen({ route, navigation }) {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -298,12 +313,15 @@ const styles = StyleSheet.create({
   navBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.md,
+    paddingBottom: SPACING.sm,
   },
   backBtn: {
-    padding: SPACING.xs,
-    marginRight: SPACING.sm,
+    width: 48,
+    height: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: SPACING.xs,
   },
   navTitle: {
     ...FONTS.header,

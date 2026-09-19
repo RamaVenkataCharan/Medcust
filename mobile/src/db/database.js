@@ -5,6 +5,8 @@ import {
   calculateEntryDue,
   calculatePaymentDue,
   calculateCustomerTotalDue,
+  isValidMedicineName,
+  cleanMedicineName,
 } from '../utils/khataLogic';
 
 // ─────────────────────────────────────────────────────────────
@@ -53,6 +55,11 @@ function initNativeDatabase() {
     CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone_number);
     CREATE INDEX IF NOT EXISTS idx_entries_customer ON entries(customer_id);
     CREATE INDEX IF NOT EXISTS idx_entry_meds_entry ON entry_medicines(entry_id);
+
+    -- Purge junk test entries to protect suggestion data quality
+    DELETE FROM entry_medicines 
+    WHERE LENGTH(TRIM(medicine_name)) < 3 
+       OR LOWER(TRIM(medicine_name)) IN ('it is', 'yu', 'test', 'testing', 'asdf', 'qwerty', 'temp', 'junk', 'sample', 'na', 'n/a', 'none', 'null', 'undefined', 'foo', 'bar', 'xx');
   `);
 }
 
@@ -339,11 +346,12 @@ export function addPurchaseEntry({ customerId, medicines = [], totalAmount = 0, 
     state.entries.push(newEntry);
 
     for (const med of medicines) {
-      if (med.name && med.name.trim()) {
+      const cleaned = cleanMedicineName(med.name);
+      if (cleaned && isValidMedicineName(cleaned)) {
         state.entry_medicines.push({
           id: state.nextMedicineId++,
           entry_id: entryId,
-          medicine_name: med.name.trim(),
+          medicine_name: cleaned,
           price: parseFloat(med.price) || 0,
         });
       }
@@ -366,12 +374,13 @@ export function addPurchaseEntry({ customerId, medicines = [], totalAmount = 0, 
     insertedEntryId = res.lastInsertRowId;
 
     for (const med of medicines) {
-      if (med.name && med.name.trim()) {
+      const cleaned = cleanMedicineName(med.name);
+      if (cleaned && isValidMedicineName(cleaned)) {
         const medPrice = parseFloat(med.price) || 0;
         db.runSync(`
           INSERT INTO entry_medicines (entry_id, medicine_name, price)
           VALUES (?, ?, ?);
-        `, [insertedEntryId, med.name.trim(), medPrice]);
+        `, [insertedEntryId, cleaned, medPrice]);
       }
     }
   });
@@ -414,7 +423,7 @@ export function getPastMedicineNames() {
   if (Platform.OS === 'web') {
     const state = getWebState();
     const names = Array.from(new Set(state.entry_medicines.map((m) => m.medicine_name)));
-    return names.sort().slice(0, 100);
+    return names.filter(isValidMedicineName).sort().slice(0, 100);
   }
 
   // Native expo-sqlite
@@ -422,10 +431,12 @@ export function getPastMedicineNames() {
   const rows = db.getAllSync(`
     SELECT DISTINCT medicine_name 
     FROM entry_medicines 
+    WHERE LENGTH(TRIM(medicine_name)) >= 3
+      AND LOWER(TRIM(medicine_name)) NOT IN ('it is', 'yu', 'test', 'testing', 'asdf', 'qwerty', 'temp', 'junk', 'sample', 'na', 'n/a', 'none', 'null', 'undefined', 'foo', 'bar', 'xx')
     ORDER BY medicine_name ASC 
     LIMIT 100;
   `);
-  return rows.map((r) => r.medicine_name);
+  return rows.map((r) => r.medicine_name).filter(isValidMedicineName);
 }
 
 export function exportAllData() {

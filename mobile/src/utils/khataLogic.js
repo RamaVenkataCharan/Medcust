@@ -51,3 +51,33 @@ export function isPaymentEntry(entry) {
 
   return (total === 0 && paid > 0) || (hasNoMeds && paid > 0);
 }
+
+/**
+ * Validates whether a typed string is a legitimate medicine/product name.
+ * Filters out short junk, keyboard smash, and test filler (e.g. "It Is", "Yu", "test").
+ */
+export function isValidMedicineName(rawName) {
+  if (!rawName || typeof rawName !== 'string') return false;
+  const trimmed = rawName.trim();
+  // Medicine names must be at least 3 characters and not excessively long
+  if (trimmed.length < 3 || trimmed.length > 80) return false;
+  // Must contain letters (not pure numbers or symbols)
+  if (!/[a-zA-Z]/.test(trimmed)) return false;
+  // Reject common garbage words/filler typed during quick testing
+  const lower = trimmed.toLowerCase();
+  const junkList = [
+    'it is', 'yu', 'test', 'testing', 'asdf', 'qwerty', 'temp', 'junk',
+    'sample', 'na', 'n/a', 'none', 'null', 'undefined', 'foo', 'bar', 'xx'
+  ];
+  if (junkList.includes(lower)) return false;
+  return true;
+}
+
+/**
+ * Sanitizes medicine name by trimming and collapsing multiple spaces.
+ */
+export function cleanMedicineName(rawName) {
+  if (!rawName) return '';
+  return String(rawName).trim().replace(/\s+/g, ' ');
+}
+
