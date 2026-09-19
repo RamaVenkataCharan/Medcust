@@ -27,7 +27,12 @@ export async function exportKhataBackup() {
       }
     }
 
-    const FileSystem = require('expo-file-system');
+    let FileSystem;
+    try {
+      FileSystem = require('expo-file-system/legacy');
+    } catch {
+      FileSystem = require('expo-file-system');
+    }
     const Sharing = require('expo-sharing');
     const filePath = `${FileSystem.documentDirectory}${fileName}`;
 
