@@ -49,8 +49,23 @@ function initNativeDatabase() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       entry_id INTEGER NOT NULL REFERENCES entries(entry_id),
       medicine_name TEXT NOT NULL,
-      price REAL DEFAULT 0
+      price REAL DEFAULT 0,
+      discount REAL DEFAULT 0
     );
+
+    CREATE TABLE IF NOT EXISTS shop_profile (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      shop_name TEXT DEFAULT '',
+      shop_license_no TEXT DEFAULT '',
+      shop_license_validity TEXT DEFAULT '',
+      shop_phone TEXT DEFAULT '',
+      pharmacist_name TEXT DEFAULT '',
+      pharmacist_phone TEXT DEFAULT '',
+      pharmacist_license_validity TEXT DEFAULT '',
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    INSERT OR IGNORE INTO shop_profile (id) VALUES (1);
 
     CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone_number);
     CREATE INDEX IF NOT EXISTS idx_entries_customer ON entries(customer_id);
@@ -61,6 +76,17 @@ function initNativeDatabase() {
     WHERE LENGTH(TRIM(medicine_name)) < 3 
        OR LOWER(TRIM(medicine_name)) IN ('it is', 'yu', 'test', 'testing', 'asdf', 'qwerty', 'temp', 'junk', 'sample', 'na', 'n/a', 'none', 'null', 'undefined', 'foo', 'bar', 'xx');
   `);
+
+  // Schema migration: guarantee discount column exists on entry_medicines for existing databases
+  try {
+    const tableInfo = db.getAllSync(`PRAGMA table_info(entry_medicines);`);
+    const hasDiscount = tableInfo.some((col) => col.name === 'discount');
+    if (!hasDiscount) {
+      db.execSync(`ALTER TABLE entry_medicines ADD COLUMN discount REAL DEFAULT 0;`);
+    }
+  } catch (migErr) {
+    console.warn('[MedTrack] Migration check for discount column:', migErr);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -71,7 +97,27 @@ const WEB_STORAGE_KEY = 'medtrack_web_db_v1';
 function getWebState() {
   try {
     const raw = typeof window !== 'undefined' ? window.localStorage.getItem(WEB_STORAGE_KEY) : null;
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (!parsed.shop_profile) {
+        parsed.shop_profile = {
+          id: 1,
+          shop_name: '',
+          shop_license_no: '',
+          shop_license_validity: '',
+          shop_phone: '',
+          pharmacist_name: '',
+          pharmacist_phone: '',
+          pharmacist_license_validity: '',
+        };
+      }
+      if (Array.isArray(parsed.entry_medicines)) {
+        parsed.entry_medicines.forEach((m) => {
+          if (m.discount === undefined) m.discount = 0;
+        });
+      }
+      return parsed;
+    }
   } catch (e) {
     console.warn('Could not read web localStorage:', e);
   }
@@ -79,6 +125,16 @@ function getWebState() {
     customers: [],
     entries: [],
     entry_medicines: [],
+    shop_profile: {
+      id: 1,
+      shop_name: '',
+      shop_license_no: '',
+      shop_license_validity: '',
+      shop_phone: '',
+      pharmacist_name: '',
+      pharmacist_phone: '',
+      pharmacist_license_validity: '',
+    },
     nextCustomerId: 1,
     nextEntryId: 1,
     nextMedicineId: 1,
@@ -269,6 +325,52 @@ export function addCustomer({ name, phone_number, village, address }) {
   return result.lastInsertRowId;
 }
 
+export function deleteCustomer(customerId) {
+  const numericId = parseInt(customerId, 10);
+  if (!numericId) return false;
+
+  if (Platform.OS === 'web') {
+    const state = getWebState();
+    // 1. Identify all entries belonging to this customer
+    const customerEntries = state.entries.filter((e) => e.customer_id === numericId);
+    const entryIds = new Set(customerEntries.map((e) => e.entry_id));
+
+    // 2. Cascade delete related medicines
+    state.entry_medicines = state.entry_medicines.filter((m) => !entryIds.has(m.entry_id));
+
+    // 3. Cascade delete entries
+    state.entries = state.entries.filter((e) => e.customer_id !== numericId);
+
+    // 4. Delete the customer
+    state.customers = state.customers.filter((c) => c.customer_id !== numericId);
+
+    saveWebState(state);
+    return true;
+  }
+
+  // Native expo-sqlite
+  const db = getNativeDb();
+  db.withTransactionSync(() => {
+    // 1. Cascade delete entry_medicines for all entries of this customer
+    db.runSync(`
+      DELETE FROM entry_medicines 
+      WHERE entry_id IN (SELECT entry_id FROM entries WHERE customer_id = ?);
+    `, [numericId]);
+
+    // 2. Cascade delete entries
+    db.runSync(`
+      DELETE FROM entries WHERE customer_id = ?;
+    `, [numericId]);
+
+    // 3. Delete customer
+    db.runSync(`
+      DELETE FROM customers WHERE customer_id = ?;
+    `, [numericId]);
+  });
+
+  return true;
+}
+
 export function getCustomerLedger(customerId) {
   const numericId = parseInt(customerId, 10);
 
@@ -279,7 +381,12 @@ export function getCustomerLedger(customerId) {
       .sort((a, b) => new Date(b.entry_date) - new Date(a.entry_date));
 
     return custEntries.map((entry) => {
-      const meds = state.entry_medicines.filter((m) => m.entry_id === entry.entry_id);
+      const meds = state.entry_medicines
+        .filter((m) => m.entry_id === entry.entry_id)
+        .map((m) => ({
+          ...m,
+          discount: parseFloat(m.discount) || 0,
+        }));
       return {
         ...entry,
         medicines: meds,
@@ -307,7 +414,7 @@ export function getCustomerLedger(customerId) {
 
   const placeholders = entryIds.map(() => '?').join(',');
   const allMeds = db.getAllSync(`
-    SELECT id, entry_id, medicine_name, price 
+    SELECT id, entry_id, medicine_name, price, COALESCE(discount, 0) AS discount 
     FROM entry_medicines 
     WHERE entry_id IN (${placeholders})
     ORDER BY id ASC;
@@ -348,11 +455,14 @@ export function addPurchaseEntry({ customerId, medicines = [], totalAmount = 0, 
     for (const med of medicines) {
       const cleaned = cleanMedicineName(med.name);
       if (cleaned && isValidMedicineName(cleaned)) {
+        const medPrice = parseFloat(med.price) || 0;
+        const medDiscount = Math.max(0, parseFloat(med.discount) || 0);
         state.entry_medicines.push({
           id: state.nextMedicineId++,
           entry_id: entryId,
           medicine_name: cleaned,
-          price: parseFloat(med.price) || 0,
+          price: medPrice,
+          discount: medDiscount,
         });
       }
     }
@@ -377,10 +487,11 @@ export function addPurchaseEntry({ customerId, medicines = [], totalAmount = 0, 
       const cleaned = cleanMedicineName(med.name);
       if (cleaned && isValidMedicineName(cleaned)) {
         const medPrice = parseFloat(med.price) || 0;
+        const medDiscount = Math.max(0, parseFloat(med.discount) || 0);
         db.runSync(`
-          INSERT INTO entry_medicines (entry_id, medicine_name, price)
-          VALUES (?, ?, ?);
-        `, [insertedEntryId, cleaned, medPrice]);
+          INSERT INTO entry_medicines (entry_id, medicine_name, price, discount)
+          VALUES (?, ?, ?, ?);
+        `, [insertedEntryId, cleaned, medPrice, medDiscount]);
       }
     }
   });
@@ -439,7 +550,96 @@ export function getPastMedicineNames() {
   return rows.map((r) => r.medicine_name).filter(isValidMedicineName);
 }
 
+export function getShopProfile() {
+  const defaultProfile = {
+    id: 1,
+    shop_name: '',
+    shop_license_no: '',
+    shop_license_validity: '',
+    shop_phone: '',
+    pharmacist_name: '',
+    pharmacist_phone: '',
+    pharmacist_license_validity: '',
+  };
+
+  if (Platform.OS === 'web') {
+    const state = getWebState();
+    return { ...defaultProfile, ...(state.shop_profile || {}) };
+  }
+
+  // Native expo-sqlite
+  const db = getNativeDb();
+  try {
+    const row = db.getFirstSync(`SELECT * FROM shop_profile WHERE id = 1;`);
+    return row ? { ...defaultProfile, ...row } : defaultProfile;
+  } catch (e) {
+    console.warn('Could not read shop_profile from SQLite:', e);
+    return defaultProfile;
+  }
+}
+
+export function saveShopProfile(profile = {}) {
+  const sanitized = {
+    shop_name: (profile.shop_name || '').trim(),
+    shop_license_no: (profile.shop_license_no || '').trim(),
+    shop_license_validity: (profile.shop_license_validity || '').trim(),
+    shop_phone: (profile.shop_phone || '').trim(),
+    pharmacist_name: (profile.pharmacist_name || '').trim(),
+    pharmacist_phone: (profile.pharmacist_phone || '').trim(),
+    pharmacist_license_validity: (profile.pharmacist_license_validity || '').trim(),
+  };
+
+  if (Platform.OS === 'web') {
+    const state = getWebState();
+    state.shop_profile = {
+      id: 1,
+      ...sanitized,
+    };
+    saveWebState(state);
+    return state.shop_profile;
+  }
+
+  // Native expo-sqlite
+  const db = getNativeDb();
+  const now = getCurrentLocalIso();
+  db.runSync(`
+    INSERT INTO shop_profile (
+      id,
+      shop_name,
+      shop_license_no,
+      shop_license_validity,
+      shop_phone,
+      pharmacist_name,
+      pharmacist_phone,
+      pharmacist_license_validity,
+      updated_at
+    ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      shop_name = excluded.shop_name,
+      shop_license_no = excluded.shop_license_no,
+      shop_license_validity = excluded.shop_license_validity,
+      shop_phone = excluded.shop_phone,
+      pharmacist_name = excluded.pharmacist_name,
+      pharmacist_phone = excluded.pharmacist_phone,
+      pharmacist_license_validity = excluded.pharmacist_license_validity,
+      updated_at = excluded.updated_at;
+  `, [
+    sanitized.shop_name,
+    sanitized.shop_license_no,
+    sanitized.shop_license_validity,
+    sanitized.shop_phone,
+    sanitized.pharmacist_name,
+    sanitized.pharmacist_phone,
+    sanitized.pharmacist_license_validity,
+    now,
+  ]);
+
+  return getShopProfile();
+}
+
 export function exportAllData() {
+  const shopProfile = getShopProfile();
+
   if (Platform.OS === 'web') {
     const state = getWebState();
     return {
@@ -448,6 +648,7 @@ export function exportAllData() {
       customers: state.customers,
       entries: state.entries,
       entryMedicines: state.entry_medicines,
+      shopProfile,
     };
   }
 
@@ -463,5 +664,7 @@ export function exportAllData() {
     customers,
     entries,
     entryMedicines,
+    shopProfile,
   };
 }
+

@@ -81,3 +81,26 @@ export function cleanMedicineName(rawName) {
   return String(rawName).trim().replace(/\s+/g, ' ');
 }
 
+/**
+ * Calculates net line total for a medicine row.
+ * Clamps discount to >= 0, and line total to >= 0 (never negative).
+ * line_total = max(0, price - max(0, discount))
+ */
+export function calculateLineTotal(price, discount) {
+  const p = parseFloat(price);
+  const d = parseFloat(discount);
+  const validPrice = isNaN(p) ? 0 : p;
+  const validDiscount = isNaN(d) ? 0 : Math.max(0, d);
+  return parseFloat(Math.max(0, validPrice - validDiscount).toFixed(2));
+}
+
+/**
+ * Calculates total purchase amount across all medicine rows, summing post-discount line totals.
+ */
+export function calculatePurchaseTotal(medicines = []) {
+  const sum = medicines.reduce((acc, med) => {
+    return acc + calculateLineTotal(med.price, med.discount);
+  }, 0);
+  return parseFloat(sum.toFixed(2));
+}
+

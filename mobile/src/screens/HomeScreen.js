@@ -102,21 +102,32 @@ export default function HomeScreen({ navigation }) {
           <Text style={styles.appSubtitle}>Medical Khata Book</Text>
         </View>
 
-        <TouchableOpacity
-          style={styles.exportButton}
-          onPress={handleExport}
-          disabled={exporting}
-          accessibilityLabel="Export Backup"
-        >
-          {exporting ? (
-            <ActivityIndicator size="small" color={COLORS.primary} />
-          ) : (
-            <>
-              <Ionicons name="share-outline" size={18} color={COLORS.primary} />
-              <Text style={styles.exportButtonText}>Backup</Text>
-            </>
-          )}
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={styles.exportButton}
+            onPress={handleExport}
+            disabled={exporting}
+            accessibilityLabel="Export Backup"
+          >
+            {exporting ? (
+              <ActivityIndicator size="small" color={COLORS.primary} />
+            ) : (
+              <>
+                <Ionicons name="share-outline" size={18} color={COLORS.primary} />
+                <Text style={styles.exportButtonText}>Backup</Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.settingsButton}
+            onPress={() => navigation.navigate('Settings')}
+            accessibilityLabel="Settings"
+            activeOpacity={0.7}
+          >
+            <Ionicons name="settings-outline" size={20} color={COLORS.textSecondary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Auto-focused Large Search Box */}
@@ -214,6 +225,21 @@ const styles = StyleSheet.create({
     ...FONTS.subtext,
     color: COLORS.textSecondary,
     marginTop: 2,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  settingsButton: {
+    width: 36,
+    height: 36,
+    borderRadius: RADIUS.pill,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   exportButton: {
     flexDirection: 'row',

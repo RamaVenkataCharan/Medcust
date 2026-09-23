@@ -12,6 +12,7 @@ import HomeScreen from './src/screens/HomeScreen';
 import AddCustomerScreen from './src/screens/AddCustomerScreen';
 import CustomerProfileScreen from './src/screens/CustomerProfileScreen';
 import AddPurchaseScreen from './src/screens/AddPurchaseScreen';
+import SettingsScreen from './src/screens/SettingsScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -51,6 +52,7 @@ export default function App() {
         <Stack.Screen name="AddCustomer" component={AddCustomerScreen} />
         <Stack.Screen name="CustomerProfile" component={CustomerProfileScreen} />
         <Stack.Screen name="AddPurchase" component={AddPurchaseScreen} />
+        <Stack.Screen name="Settings" component={SettingsScreen} />
       </Stack.Navigator>
     </NavigationContainer>
     </SafeAreaProvider>

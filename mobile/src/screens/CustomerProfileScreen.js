@@ -16,7 +16,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, FONTS } from '../constants/theme';
-import { getCustomerById, getCustomerLedger, addDuePayment } from '../db/database';
+import { getCustomerById, getCustomerLedger, addDuePayment, deleteCustomer } from '../db/database';
 import { formatLocalDateTime } from '../utils/dateUtils';
 import { isPaymentEntry } from '../utils/khataLogic';
 
@@ -34,6 +34,47 @@ export default function CustomerProfileScreen({ route, navigation }) {
   const [payModalVisible, setPayModalVisible] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [savingPayment, setSavingPayment] = useState(false);
+
+  // Delete modal state
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDeletePress = () => {
+    if (!customer) return;
+    const currentDue = parseFloat(customer.total_due || 0);
+
+    if (currentDue > 0.001) {
+      Alert.alert(
+        'Cannot Delete Customer',
+        `Clear this customer's due before deleting — currently ₹${currentDue.toFixed(2)} due.`
+      );
+      return;
+    }
+
+    if (currentDue < -0.001) {
+      Alert.alert(
+        'Cannot Delete Customer',
+        `Clear this customer's credit balance before deleting — currently ₹${Math.abs(currentDue).toFixed(2)} in credit.`
+      );
+      return;
+    }
+
+    setDeleteModalVisible(true);
+  };
+
+  const confirmDeleteCustomer = () => {
+    setDeleting(true);
+    try {
+      deleteCustomer(customerId);
+      setDeleteModalVisible(false);
+      navigation.goBack();
+    } catch (err) {
+      console.error('Error deleting customer:', err);
+      Alert.alert('Delete Failed', err.message || 'Could not delete customer.');
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const loadProfile = useCallback(() => {
     try {
@@ -129,14 +170,23 @@ export default function CustomerProfileScreen({ route, navigation }) {
 
         {/* Medicine Tags */}
         <View style={styles.medicineList}>
-          {medicines.map((med, idx) => (
-            <View key={idx} style={styles.medicineChip}>
-              <Text style={styles.medicineName}>{med.medicine_name}</Text>
-              {med.price > 0 ? (
-                <Text style={styles.medicinePrice}>₹{parseFloat(med.price).toFixed(0)}</Text>
-              ) : null}
-            </View>
-          ))}
+          {medicines.map((med, idx) => {
+            const price = parseFloat(med.price || 0);
+            const discount = parseFloat(med.discount || 0);
+            const netPrice = Math.max(0, price - discount);
+
+            return (
+              <View key={idx} style={styles.medicineChip}>
+                <Text style={styles.medicineName}>{med.medicine_name}</Text>
+                {price > 0 ? (
+                  <Text style={styles.medicinePrice}>
+                    ₹{netPrice.toFixed(0)}
+                    {discount > 0 ? ` (-₹${discount.toFixed(0)})` : ''}
+                  </Text>
+                ) : null}
+              </View>
+            );
+          })}
           {medicines.length === 0 && (
             <Text style={styles.noMedsText}>General purchase</Text>
           )}
@@ -174,6 +224,16 @@ export default function CustomerProfileScreen({ route, navigation }) {
         <Text style={styles.navTitle} numberOfLines={1}>
           {customer.name}
         </Text>
+        <TouchableOpacity
+          onPress={handleDeletePress}
+          style={styles.deleteCustomerBtn}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Delete Customer"
+        >
+          <Ionicons name="trash-outline" size={22} color={COLORS.danger} />
+        </TouchableOpacity>
       </View>
 
       {/* Customer Header Index-Card */}
@@ -296,6 +356,52 @@ export default function CustomerProfileScreen({ route, navigation }) {
           </View>
         </View>
       </Modal>
+
+      {/* Delete Customer Confirmation Modal */}
+      <Modal visible={deleteModalVisible} transparent={true} animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.deleteModalHeader}>
+              <View style={styles.deleteIconWrap}>
+                <Ionicons name="trash-outline" size={22} color={COLORS.danger} />
+              </View>
+              <Text style={styles.deleteModalTitle}>Delete Customer?</Text>
+            </View>
+
+            <Text style={styles.deleteModalMessage}>
+              {ledger.length > 0
+                ? `Delete ${customer.name} and all ${ledger.length} purchase record${ledger.length === 1 ? '' : 's'}? This cannot be undone.`
+                : `Delete ${customer.name}? This cannot be undone.`}
+            </Text>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setDeleteModalVisible(false)}
+                disabled={deleting}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel"
+              >
+                <Text style={styles.modalCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.deleteConfirmBtn, deleting && styles.btnDisabled]}
+                onPress={confirmDeleteCustomer}
+                disabled={deleting}
+                accessibilityRole="button"
+                accessibilityLabel="Delete Customer Permanently"
+              >
+                {deleting ? (
+                  <ActivityIndicator size="small" color={COLORS.textInverted} />
+                ) : (
+                  <Text style={styles.deleteConfirmBtnText}>Delete Permanently</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -326,6 +432,13 @@ const styles = StyleSheet.create({
   navTitle: {
     ...FONTS.header,
     flex: 1,
+  },
+  deleteCustomerBtn: {
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: RADIUS.pill,
   },
   customerHeaderCard: {
     backgroundColor: COLORS.surface,
@@ -634,5 +747,46 @@ const styles = StyleSheet.create({
     ...FONTS.body,
     color: COLORS.textInverted,
     fontWeight: '600',
+  },
+  deleteModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    marginBottom: SPACING.md,
+  },
+  deleteIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: RADIUS.pill,
+    backgroundColor: COLORS.dangerLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  deleteModalTitle: {
+    ...FONTS.header,
+    color: COLORS.danger,
+    fontSize: 18,
+  },
+  deleteModalMessage: {
+    ...FONTS.body,
+    color: COLORS.textPrimary,
+    lineHeight: 22,
+    marginBottom: SPACING.xl,
+  },
+  deleteConfirmBtn: {
+    backgroundColor: COLORS.danger,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.xl,
+    borderRadius: RADIUS.pill,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  deleteConfirmBtnText: {
+    ...FONTS.body,
+    color: COLORS.textInverted,
+    fontWeight: '600',
+  },
+  btnDisabled: {
+    opacity: 0.6,
   },
 });

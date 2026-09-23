@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, FONTS } from '../constants/theme';
 import { addPurchaseEntry, getPastMedicineNames } from '../db/database';
-import { calculateEntryDue } from '../utils/khataLogic';
+import { calculateEntryDue, calculateLineTotal, calculatePurchaseTotal } from '../utils/khataLogic';
 
 export default function AddPurchaseScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
@@ -23,9 +23,9 @@ export default function AddPurchaseScreen({ route, navigation }) {
 
   const { customerId, customerName } = route.params;
 
-  // Medicine list: array of { id, name, price }
+  // Medicine list: array of { id, name, price, discount }
   const [medicines, setMedicines] = useState([
-    { id: '1', name: '', price: '' },
+    { id: '1', name: '', price: '', discount: '' },
   ]);
   const [pastSuggestions, setPastSuggestions] = useState([]);
   const [amountPaid, setAmountPaid] = useState('');
@@ -43,14 +43,14 @@ export default function AddPurchaseScreen({ route, navigation }) {
   const addMedicineRow = () => {
     setMedicines((prev) => [
       ...prev,
-      { id: String(Date.now() + Math.random()), name: '', price: '' },
+      { id: String(Date.now() + Math.random()), name: '', price: '', discount: '' },
     ]);
   };
 
   const removeMedicineRow = (id) => {
     if (medicines.length === 1) {
       // Clear instead of removing last row
-      setMedicines([{ id: '1', name: '', price: '' }]);
+      setMedicines([{ id: '1', name: '', price: '', discount: '' }]);
       return;
     }
     setMedicines((prev) => prev.filter((m) => m.id !== id));
@@ -74,11 +74,7 @@ export default function AddPurchaseScreen({ route, navigation }) {
   };
 
   // Calculations
-  const calculatedTotal = medicines.reduce((sum, item) => {
-    const val = parseFloat(item.price);
-    return sum + (isNaN(val) ? 0 : val);
-  }, 0);
-
+  const calculatedTotal = calculatePurchaseTotal(medicines);
   const parsedPaid = parseFloat(amountPaid) || 0;
   const calculatedDue = calculateEntryDue(calculatedTotal, parsedPaid);
 
@@ -155,7 +151,7 @@ export default function AddPurchaseScreen({ route, navigation }) {
                       if (!medicines[lastIdx].name) {
                         selectSuggestion(lastIdx, name);
                       } else {
-                        setMedicines([...medicines, { id: String(Date.now()), name, price: '' }]);
+                        setMedicines([...medicines, { id: String(Date.now()), name, price: '', discount: '' }]);
                       }
                     }}
                   >
@@ -170,38 +166,66 @@ export default function AddPurchaseScreen({ route, navigation }) {
           <View style={styles.card}>
             <Text style={styles.cardHeaderTitle}>Medicines & Items</Text>
 
-            {medicines.map((item, index) => (
-              <View key={item.id} style={styles.medicineRow}>
-                <View style={{ flex: 1 }}>
-                  <TextInput
-                    style={styles.medicineInput}
-                    placeholder={`Medicine #${index + 1}`}
-                    placeholderTextColor={COLORS.textTertiary}
-                    value={item.name}
-                    onChangeText={(val) => updateMedicine(item.id, 'name', val)}
-                    autoCapitalize="words"
-                  />
-                </View>
+            {medicines.map((item, index) => {
+              const lineTotal = calculateLineTotal(item.price, item.discount);
+              const hasDiscount = parseFloat(item.discount) > 0;
 
-                <View style={{ width: 100 }}>
-                  <TextInput
-                    style={styles.priceInput}
-                    placeholder="Price (₹)"
-                    placeholderTextColor={COLORS.textTertiary}
-                    value={item.price}
-                    onChangeText={(val) => updateMedicine(item.id, 'price', val)}
-                    keyboardType="numeric"
-                  />
-                </View>
+              return (
+                <View key={item.id} style={styles.medicineItemCard}>
+                  {/* Top Tier: Medicine Name & Delete Button */}
+                  <View style={styles.nameRow}>
+                    <TextInput
+                      style={styles.medicineInput}
+                      placeholder={`Medicine #${index + 1} (e.g. Paracetamol)`}
+                      placeholderTextColor={COLORS.textTertiary}
+                      value={item.name}
+                      onChangeText={(val) => updateMedicine(item.id, 'name', val)}
+                      autoCapitalize="words"
+                    />
+                    <TouchableOpacity
+                      onPress={() => removeMedicineRow(item.id)}
+                      style={styles.deleteRowBtn}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      accessibilityLabel="Remove medicine"
+                    >
+                      <Ionicons name="trash-outline" size={19} color={COLORS.danger} />
+                    </TouchableOpacity>
+                  </View>
 
-                <TouchableOpacity
-                  onPress={() => removeMedicineRow(item.id)}
-                  style={styles.deleteRowBtn}
-                >
-                  <Ionicons name="trash-outline" size={18} color={COLORS.danger} />
-                </TouchableOpacity>
-              </View>
-            ))}
+                  {/* Bottom Tier: Price, Discount (₹), and Live Net Total */}
+                  <View style={styles.pricingRow}>
+                    <View style={styles.priceInputWrap}>
+                      <TextInput
+                        style={styles.priceInput}
+                        placeholder="Price (₹)"
+                        placeholderTextColor={COLORS.textTertiary}
+                        value={item.price}
+                        onChangeText={(val) => updateMedicine(item.id, 'price', val)}
+                        keyboardType="numeric"
+                      />
+                    </View>
+
+                    <View style={styles.discountInputWrap}>
+                      <TextInput
+                        style={styles.discountInput}
+                        placeholder="Disc (₹)"
+                        placeholderTextColor={COLORS.textTertiary}
+                        value={item.discount}
+                        onChangeText={(val) => updateMedicine(item.id, 'discount', val)}
+                        keyboardType="numeric"
+                      />
+                    </View>
+
+                    <View style={[styles.lineTotalBadge, hasDiscount && styles.lineTotalBadgeDiscounted]}>
+                      <Text style={styles.lineTotalLabel}>Net</Text>
+                      <Text style={[styles.lineTotalText, hasDiscount && styles.lineTotalTextDiscounted]}>
+                        ₹{lineTotal.toFixed(0)}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              );
+            })}
 
             {/* Add Another Medicine Row */}
             <TouchableOpacity style={styles.addRowBtn} onPress={addMedicineRow}>
@@ -332,33 +356,95 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginBottom: SPACING.md,
   },
-  medicineRow: {
+  medicineItemCard: {
+    backgroundColor: COLORS.surfaceSubtle,
+    borderRadius: RADIUS.md,
+    padding: SPACING.sm + 2,
+    marginBottom: SPACING.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: SPACING.md,
+    marginBottom: SPACING.sm,
   },
   medicineInput: {
-    backgroundColor: COLORS.surfaceSubtle,
+    flex: 1,
+    backgroundColor: COLORS.surface,
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: RADIUS.md,
+    borderRadius: RADIUS.sm,
     paddingHorizontal: SPACING.md,
-    height: 48,
+    height: 42,
     ...FONTS.body,
-  },
-  priceInput: {
-    backgroundColor: COLORS.surfaceSubtle,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: RADIUS.md,
-    paddingHorizontal: SPACING.md,
-    height: 48,
-    ...FONTS.body,
-    textAlign: 'right',
+    fontSize: 14,
   },
   deleteRowBtn: {
     padding: SPACING.xs,
+  },
+  pricingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  priceInputWrap: {
+    flex: 1,
+  },
+  priceInput: {
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.sm,
+    paddingHorizontal: SPACING.sm + 2,
+    height: 40,
+    ...FONTS.body,
+    fontSize: 14,
+    textAlign: 'right',
+  },
+  discountInputWrap: {
+    flex: 1,
+  },
+  discountInput: {
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.sm,
+    paddingHorizontal: SPACING.sm + 2,
+    height: 40,
+    ...FONTS.body,
+    fontSize: 14,
+    textAlign: 'right',
+  },
+  lineTotalBadge: {
+    minWidth: 70,
+    height: 40,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.sm,
+    paddingHorizontal: SPACING.sm,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  lineTotalBadgeDiscounted: {
+    borderColor: COLORS.primaryBorder,
+    backgroundColor: COLORS.primaryLight,
+  },
+  lineTotalLabel: {
+    fontSize: 10,
+    color: COLORS.textTertiary,
+    lineHeight: 12,
+  },
+  lineTotalText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    lineHeight: 16,
+  },
+  lineTotalTextDiscounted: {
+    color: COLORS.primary,
   },
   addRowBtn: {
     flexDirection: 'row',
