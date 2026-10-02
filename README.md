@@ -9,7 +9,7 @@
 - **Phone-Number-First Customer Search**:
   - Auto-focused search bar on load (`/` shortcut).
   - Instant phone lookup (< 2s) with fallback name and village search.
-  - Quick "+ Add New Customer" overlay if no match found.
+  - Quick "+ Add New Customer" overlay if no match found.         
 - **Zero-Error Due Calculation**:
   - Customer due is strictly computed as `SUM(entries.due_amount) - SUM(payments.amount)`.
   - Never stored as an editable field.
