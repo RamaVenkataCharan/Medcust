@@ -14,7 +14,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, FONTS } from '../constants/theme';
-import { addCustomer, getCustomerByPhone } from '../db/database';
+import { addCustomer, getCustomerByPhone, restoreCustomer } from '../db/database';
 import { cleanPhoneNumber } from '../utils/khataLogic';
 
 export default function AddCustomerScreen({ navigation, route }) {
@@ -49,6 +49,29 @@ export default function AddCustomerScreen({ navigation, route }) {
       // 1. Check for existing customer by phone number
       const existing = getCustomerByPhone(cleanPhone);
       if (existing) {
+        if (existing.deleted_at) {
+          Alert.alert(
+            'Customer in Recycle Bin',
+            `"${existing.name}" is currently in the Recycle Bin with this phone number. Would you like to restore this customer instead?`,
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Restore Customer',
+                onPress: () => {
+                  try {
+                    restoreCustomer(existing.customer_id);
+                    Alert.alert('Customer Restored', `"${existing.name}" has been restored to active ledger.`);
+                    navigation.replace('CustomerProfile', { customerId: existing.customer_id });
+                  } catch (e) {
+                    Alert.alert('Restore Failed', e.message);
+                  }
+                },
+              },
+            ]
+          );
+          return;
+        }
+
         Alert.alert(
           'Customer Already Exists',
           `"${existing.name}" is already registered with this phone number. Opening profile...`,

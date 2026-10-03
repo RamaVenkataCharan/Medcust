@@ -50,9 +50,14 @@ const {
   recordPayment,
   getCustomerStats,
   autocompleteMedicines,
+  softDeleteCustomer,
+  restoreCustomer,
+  getTrashCustomers,
+  permanentDeleteCustomer,
+  autoPurgeTrash,
 } = require('../db/database');
 
-const db = getDb();
+let db = getDb();
 
 async function runCoreTests() {
   console.log(`\n====================================================`);
@@ -263,12 +268,196 @@ async function runCoreTests() {
     // Test restoreBackup
     const restoreResult = restoreBackup(backupResult.filename);
     assert(restoreResult.success === true, 'restoreBackup succeeds using valid backup file');
+    db = getDb();
 
     // Test generateCsvExport
     const csvData = generateCsvExport();
     assert(typeof csvData === 'string' && csvData.length > 0, 'generateCsvExport generates non-empty string');
     assert(csvData.includes('=== CUSTOMERS & DUES LEDGER ==='), 'CSV contains customer ledger header');
     assert(csvData.includes('Rajesh Sharma'), 'CSV contains existing customer data');
+  }
+
+  // ── 8. Customer Soft Delete & Recycle Bin Lifecycle ──
+  section('8. Customer Soft Delete & Recycle Bin Lifecycle');
+  {
+    // Test 1: Delete returns 409 when due is not 0 (both positive due and credit balance)
+    // 1a. Positive due
+    const custA = db.prepare('INSERT INTO customers (phone_number, name, village) VALUES (?, ?, ?) RETURNING customer_id')
+      .get('9000000001', 'Debtor A', 'Village A');
+    addEntry({
+      customerId: custA.customer_id,
+      totalAmount: 500,
+      amountPaid: 200,
+      medicines: [{ name: 'Test Med', price: 500 }],
+    });
+    let blockedPositive = false;
+    let blockedPositiveStatus = 0;
+    try {
+      softDeleteCustomer(custA.customer_id);
+    } catch (err) {
+      blockedPositive = true;
+      blockedPositiveStatus = err.status;
+    }
+    assert(blockedPositive && blockedPositiveStatus === 409, '1a. Delete blocked with 409 when customer has positive outstanding due');
+
+    // 1b. Credit balance (overpayment)
+    const custB = db.prepare('INSERT INTO customers (phone_number, name, village) VALUES (?, ?, ?) RETURNING customer_id')
+      .get('9000000002', 'Credit B', 'Village B');
+    addEntry({
+      customerId: custB.customer_id,
+      totalAmount: 100,
+      amountPaid: 100,
+      medicines: [{ name: 'Test Med', price: 100 }],
+    });
+    recordPayment({ customerId: custB.customer_id, amount: 50, note: 'Advance credit' });
+    let blockedCredit = false;
+    let blockedCreditStatus = 0;
+    try {
+      softDeleteCustomer(custB.customer_id);
+    } catch (err) {
+      blockedCredit = true;
+      blockedCreditStatus = err.status;
+    }
+    assert(blockedCredit && blockedCreditStatus === 409, '1b. Delete blocked with 409 when customer has credit balance (overpayment)');
+
+    // Test 2: Soft delete clear customer (due = 0) -> absent from search & dues report, but entries/payments stay
+    const custC = db.prepare('INSERT INTO customers (phone_number, name, village) VALUES (?, ?, ?) RETURNING customer_id')
+      .get('9000000003', 'Clear C', 'Village C');
+    addEntry({
+      customerId: custC.customer_id,
+      totalAmount: 200,
+      amountPaid: 200,
+      medicines: [{ name: 'Test Med C', price: 200 }],
+    });
+    assert(getCustomerDue(custC.customer_id) === 0, 'Customer C starts with 0 due');
+
+    const deleteRes = softDeleteCustomer(custC.customer_id);
+    assert(deleteRes.success === true, 'Soft delete succeeds for customer with 0 due');
+
+    // Check absent from active search query
+    const searchMatches = db.prepare('SELECT * FROM customers WHERE phone_number = ? AND deleted_at IS NULL')
+      .all('9000000003');
+    assert(searchMatches.length === 0, '2a. Deleted customer absent from active search query');
+
+    // Check absent from dues report query
+    const duesCustomers = db.prepare('SELECT * FROM customers WHERE deleted_at IS NULL').all();
+    assert(!duesCustomers.some(c => c.customer_id === custC.customer_id), '2b. Deleted customer absent from dues report query');
+
+    // Check child rows remain in DB
+    const entriesRemain = db.prepare('SELECT count(*) as count FROM entries WHERE customer_id = ?').get(custC.customer_id);
+    const medsRemain = db.prepare(`
+      SELECT count(*) as count FROM entry_medicine 
+      WHERE entry_id IN (SELECT entry_id FROM entries WHERE customer_id = ?)
+    `).get(custC.customer_id);
+    assert(entriesRemain.count > 0 && medsRemain.count > 0, '2c. Entries and entry_medicine line items remain untouched in database');
+
+    // Appears in trash
+    const trashList = getTrashCustomers();
+    assert(trashList.some(c => c.customer_id === custC.customer_id), 'Deleted customer appears in Recycle Bin (getTrashCustomers)');
+
+    // Test 3: Restore returns the same derived due
+    const restored = restoreCustomer(custC.customer_id);
+    assert(restored.deleted_at === null, '3a. Restore sets deleted_at to NULL');
+    assert(restored.total_due === 0, '3b. Restore returns the same derived due (0.00)');
+    const activeAgain = db.prepare('SELECT * FROM customers WHERE customer_id = ? AND deleted_at IS NULL').get(custC.customer_id);
+    assert(activeAgain !== undefined, '3c. Restored customer is active again in search queries');
+
+    // Test 4: Permanent delete removes customer and all child rows, returns error if not in bin
+    let errNotBinned = false;
+    try {
+      permanentDeleteCustomer(custC.customer_id); // Currently active, not in bin
+    } catch (err) {
+      errNotBinned = true;
+    }
+    assert(errNotBinned, '4a. Permanent delete throws error if customer is not in the Recycle Bin');
+
+    // Soft delete again to put in bin
+    softDeleteCustomer(custC.customer_id);
+    // Now permanent delete
+    const permRes = permanentDeleteCustomer(custC.customer_id);
+    assert(permRes.success === true, '4b. Permanent delete succeeds for customer in bin');
+
+    const checkCust = db.prepare('SELECT * FROM customers WHERE customer_id = ?').get(custC.customer_id);
+    const checkEntries = db.prepare('SELECT count(*) as count FROM entries WHERE customer_id = ?').get(custC.customer_id);
+    const checkMeds = db.prepare(`
+      SELECT count(*) as count FROM entry_medicine 
+      WHERE entry_id IN (SELECT entry_id FROM entries WHERE customer_id = ?)
+    `).get(custC.customer_id);
+    assert(!checkCust && checkEntries.count === 0 && checkMeds.count === 0, '4c. Customer, entries, and entry_medicine completely removed from DB');
+
+    // Test 5: Re-registering binned phone number returns 409 with inRecycleBin true
+    const custD = db.prepare('INSERT INTO customers (phone_number, name, village) VALUES (?, ?, ?) RETURNING customer_id')
+      .get('9000000005', 'Binned D', 'Village D');
+    softDeleteCustomer(custD.customer_id);
+
+    const dupCheck = db.prepare('SELECT * FROM customers WHERE phone_number = ?').get('9000000005');
+    assert(dupCheck !== undefined && dupCheck.deleted_at !== null, '5a. Customer with phone 9000000005 exists in bin');
+    const isBinned = dupCheck.deleted_at !== null;
+    assert(isBinned === true, '5b. Duplicate registration detects inRecycleBin true');
+
+    // Test 6: A failure mid-permanent-delete rolls back everything
+    const custE = db.prepare('INSERT INTO customers (phone_number, name, village) VALUES (?, ?, ?) RETURNING customer_id')
+      .get('9000000006', 'Rollback E', 'Village E');
+    addEntry({
+      customerId: custE.customer_id,
+      totalAmount: 150,
+      amountPaid: 150,
+      medicines: [{ name: 'Rollback Med', price: 150 }],
+    });
+    softDeleteCustomer(custE.customer_id);
+
+    // Create trigger that aborts customer deletion to simulate failure mid-transaction
+    db.exec(`
+      CREATE TRIGGER IF NOT EXISTS test_abort_cust_del
+      BEFORE DELETE ON customers
+      WHEN OLD.phone_number = '9000000006'
+      BEGIN
+        SELECT RAISE(ABORT, 'Simulated mid-transaction failure');
+      END;
+    `);
+
+    let rollbackTriggered = false;
+    try {
+      permanentDeleteCustomer(custE.customer_id);
+    } catch (err) {
+      rollbackTriggered = true;
+    }
+    assert(rollbackTriggered, '6a. Mid-transaction failure triggers error');
+
+    // Verify rollback: entries, entry_medicine, and customer must still exist
+    const custEExists = db.prepare('SELECT * FROM customers WHERE customer_id = ?').get(custE.customer_id);
+    const entriesEExists = db.prepare('SELECT count(*) as count FROM entries WHERE customer_id = ?').get(custE.customer_id);
+    const medsEExists = db.prepare(`
+      SELECT count(*) as count FROM entry_medicine 
+      WHERE entry_id IN (SELECT entry_id FROM entries WHERE customer_id = ?)
+    `).get(custE.customer_id);
+    assert(custEExists !== undefined && entriesEExists.count === 1 && medsEExists.count === 1, '6b. Complete rollback: customer, entries, and medicines preserved intact');
+
+    // Clean up trigger & custE
+    db.exec('DROP TRIGGER IF EXISTS test_abort_cust_del;');
+    permanentDeleteCustomer(custE.customer_id);
+
+    // Test 7: Auto-purge removes only items older than retention period
+    const custOld = db.prepare('INSERT INTO customers (phone_number, name, village) VALUES (?, ?, ?) RETURNING customer_id')
+      .get('9000000007', 'Old Binned', 'Old Village');
+    const custNew = db.prepare('INSERT INTO customers (phone_number, name, village) VALUES (?, ?, ?) RETURNING customer_id')
+      .get('9000000008', 'New Binned', 'New Village');
+
+    // Set deleted_at to 40 days ago for custOld and 5 days ago for custNew
+    db.prepare("UPDATE customers SET deleted_at = datetime('now', '-40 days') WHERE customer_id = ?").run(custOld.customer_id);
+    db.prepare("UPDATE customers SET deleted_at = datetime('now', '-5 days') WHERE customer_id = ?").run(custNew.customer_id);
+
+    const purgeResult = autoPurgeTrash(30);
+    assert(purgeResult.purgedCount >= 1, '7a. autoPurgeTrash purges expired customer(s)');
+
+    const oldCheck = db.prepare('SELECT * FROM customers WHERE customer_id = ?').get(custOld.customer_id);
+    const newCheck = db.prepare('SELECT * FROM customers WHERE customer_id = ?').get(custNew.customer_id);
+    assert(oldCheck === undefined, '7b. Customer deleted 40 days ago was purged');
+    assert(newCheck !== undefined && newCheck.deleted_at !== null, '7c. Customer deleted 5 days ago is retained safely in the bin');
+
+    // Clean up custNew and custD
+    permanentDeleteCustomer(custNew.customer_id);
+    permanentDeleteCustomer(custD.customer_id);
   }
 
   // ── Summary ──

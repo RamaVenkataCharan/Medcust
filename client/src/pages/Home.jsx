@@ -1,16 +1,18 @@
 import React, { useState } from 'react';
-import { BookOpen, UserPlus, Phone, ShieldCheck, Zap, Users, ArrowRight } from 'lucide-react';
+import { BookOpen, UserPlus, Phone, ShieldCheck, Zap, Users, ArrowRight, RotateCcw } from 'lucide-react';
 import SearchBar from '../components/SearchBar';
 import Modal from '../components/Modal';
 import { api } from '../utils/api';
 import { useToast } from '../components/Toast';
 
-export default function Home({ onSelectCustomer, onOpenDuesReport }) {
+export default function Home({ onSelectCustomer, onOpenDuesReport, onTrashUpdated }) {
   const { addToast } = useToast();
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [formData, setFormData] = useState({ name: '', phone_number: '', village: '', address: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [binnedCustomer, setBinnedCustomer] = useState(null);
+  const [isRestoring, setIsRestoring] = useState(false);
 
   const handleOpenAddModal = (prefill = {}) => {
     setFormData({
@@ -19,7 +21,25 @@ export default function Home({ onSelectCustomer, onOpenDuesReport }) {
       village: '',
       address: '',
     });
+    setBinnedCustomer(null);
     setIsAddModalOpen(true);
+  };
+
+  const handleRestoreBinned = async () => {
+    if (!binnedCustomer) return;
+    setIsRestoring(true);
+    try {
+      const restored = await api.restoreCustomer(binnedCustomer.customer_id);
+      addToast(`Customer "${restored.name}" restored from Recycle Bin!`, 'success');
+      setIsAddModalOpen(false);
+      setBinnedCustomer(null);
+      if (onTrashUpdated) onTrashUpdated();
+      onSelectCustomer(restored);
+    } catch (err) {
+      addToast('Failed to restore customer: ' + err.message, 'error');
+    } finally {
+      setIsRestoring(false);
+    }
   };
 
   const handleCreateCustomer = async (e) => {
@@ -32,6 +52,7 @@ export default function Home({ onSelectCustomer, onOpenDuesReport }) {
     }
 
     setIsSubmitting(true);
+    setBinnedCustomer(null);
     try {
       const created = await api.createCustomer({
         name: formData.name.trim(),
@@ -44,7 +65,9 @@ export default function Home({ onSelectCustomer, onOpenDuesReport }) {
       setIsAddModalOpen(false);
       onSelectCustomer(created);
     } catch (err) {
-      if (err.existingCustomer) {
+      if (err.inRecycleBin && err.customer) {
+        setBinnedCustomer(err.customer);
+      } else if (err.existingCustomer) {
         addToast(
           `Customer already registered with phone ${cleanPhone}. Opened existing khata ledger.`,
           'info'
@@ -149,6 +172,36 @@ export default function Home({ onSelectCustomer, onOpenDuesReport }) {
         maxWidth="max-w-md"
       >
         <form onSubmit={handleCreateCustomer} className="space-y-4 text-xs">
+          {binnedCustomer && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 space-y-2">
+              <div className="flex items-center gap-1.5 font-bold text-amber-800">
+                <RotateCcw className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                <span>Customer in Recycle Bin</span>
+              </div>
+              <p className="text-[11px] leading-relaxed">
+                The mobile number <strong>{binnedCustomer.phone_number}</strong> belongs to{' '}
+                <strong>{binnedCustomer.name}</strong> ({binnedCustomer.village || 'No village'}), who is currently in the Recycle Bin.
+              </p>
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={handleRestoreBinned}
+                  disabled={isRestoring}
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold shadow-xs transition-colors disabled:opacity-50"
+                >
+                  {isRestoring ? 'Restoring...' : 'Restore Customer Instead'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBinnedCustomer(null)}
+                  className="px-2.5 py-1.5 text-slate-600 hover:bg-amber-100/60 rounded-lg font-medium"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          )}
+
           <div>
             <label className="block font-bold text-slate-700 mb-1">Mobile Number (10 digits) *</label>
             <input

@@ -2,7 +2,7 @@ const http = require('http');
 const express = require('express');
 const cors = require('cors');
 const config = require('./config');
-const { getDb } = require('./db/database');
+const { getDb, autoPurgeTrash } = require('./db/database');
 const { performBackup } = require('./services/backupService');
 
 // Initialize database schema on startup
@@ -14,6 +14,16 @@ if (backupStatus.skipped) {
   console.log(`[Backup] ${backupStatus.message}`);
 } else if (backupStatus.success) {
   console.log(`[Backup] Automated daily backup created: ${backupStatus.filename}`);
+}
+
+// Auto-purge recycle bin items older than retention period (default 30 days)
+try {
+  const purgeStatus = autoPurgeTrash(config.TRASH_RETENTION_DAYS);
+  if (purgeStatus && purgeStatus.purgedCount > 0) {
+    console.log(`[RecycleBin] Startup purge: removed ${purgeStatus.purgedCount} expired record(s).`);
+  }
+} catch (purgeErr) {
+  console.warn('[RecycleBin] Auto-purge notice:', purgeErr.message);
 }
 
 const app = express();

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -13,9 +13,10 @@ import {
   Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, FONTS } from '../constants/theme';
-import { getShopProfile, saveShopProfile } from '../db/database';
+import { getShopProfile, saveShopProfile, getTrashCustomers } from '../db/database';
 
 export default function SettingsScreen({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -24,6 +25,7 @@ export default function SettingsScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [trashCount, setTrashCount] = useState(0);
 
   const [profile, setProfile] = useState({
     shop_name: '',
@@ -34,6 +36,17 @@ export default function SettingsScreen({ navigation }) {
     pharmacist_phone: '',
     pharmacist_license_validity: '',
   });
+
+  useFocusEffect(
+    useCallback(() => {
+      try {
+        const trash = getTrashCustomers();
+        setTrashCount(trash ? trash.length : 0);
+      } catch (e) {
+        console.warn('Could not load trash count:', e);
+      }
+    }, [])
+  );
 
   useEffect(() => {
     try {
@@ -259,6 +272,36 @@ export default function SettingsScreen({ navigation }) {
             </View>
           </View>
 
+          {/* Data Management & Recycle Bin Card */}
+          <View style={styles.card}>
+            <View style={styles.sectionHeaderRow}>
+              <Ionicons name="trash-outline" size={20} color={COLORS.primary} />
+              <Text style={styles.cardHeaderTitle}>Ledger Data & Recycle Bin</Text>
+            </View>
+
+            <TouchableOpacity
+              style={styles.recycleBinNavBtn}
+              onPress={() => navigation.navigate('RecycleBin')}
+              activeOpacity={0.7}
+            >
+              <View style={styles.recycleBinIconWrap}>
+                <Ionicons name="trash-bin-outline" size={20} color={COLORS.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.recycleBinTitle}>Recycle Bin</Text>
+                <Text style={styles.recycleBinSubtitle}>
+                  View, restore, or permanently remove soft-deleted customers
+                </Text>
+              </View>
+              {trashCount > 0 && (
+                <View style={styles.trashBadge}>
+                  <Text style={styles.trashBadgeText}>{trashCount}</Text>
+                </View>
+              )}
+              <Ionicons name="chevron-forward" size={18} color={COLORS.textTertiary} />
+            </TouchableOpacity>
+          </View>
+
           {/* Save Button */}
           <TouchableOpacity
             style={[styles.saveBtn, saving && styles.btnDisabled]}
@@ -409,5 +452,48 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: COLORS.textInverted,
     fontSize: 16,
+  },
+  recycleBinNavBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: SPACING.md,
+    borderRadius: RADIUS.md,
+    gap: SPACING.md,
+  },
+  recycleBinIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  recycleBinTitle: {
+    ...FONTS.body,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    fontSize: 15,
+    marginBottom: 2,
+  },
+  recycleBinSubtitle: {
+    ...FONTS.subtext,
+    color: COLORS.textSecondary,
+    fontSize: 12,
+  },
+  trashBadge: {
+    backgroundColor: COLORS.dueBadgeBorder,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: RADIUS.pill,
+  },
+  trashBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.dueBadgeBg,
   },
 });

@@ -20,6 +20,17 @@ function getDb() {
   dbInstance.pragma('foreign_keys = ON');
   dbInstance.pragma('synchronous = NORMAL');
 
+  // Idempotent migration check: guarantee deleted_at column exists on customers for existing databases before executing schema.sql
+  try {
+    const tableInfo = dbInstance.pragma('table_info(customers)');
+    const hasDeletedAt = tableInfo.some((col) => col.name === 'deleted_at');
+    if (!hasDeletedAt && tableInfo.length > 0) {
+      dbInstance.exec('ALTER TABLE customers ADD COLUMN deleted_at TEXT DEFAULT NULL;');
+    }
+  } catch (migErr) {
+    console.warn('[MedTrack] Migration check for deleted_at column:', migErr.message);
+  }
+
   // Initialize schema
   const schemaPath = path.join(__dirname, 'schema.sql');
   if (fs.existsSync(schemaPath)) {
@@ -43,10 +54,10 @@ function closeDb() {
 }
 
 /**
- * Calculates customer's exact total due from ledger data:
- * total_due = SUM(entries.due_amount) - SUM(payments.amount)
+ * Calculates customer's exact net ledger balance (positive for dues, negative for credit/overpayment):
+ * net_balance = SUM(entries.due_amount) - SUM(payments.amount)
  */
-function getCustomerDue(customerId) {
+function getCustomerBalance(customerId) {
   const db = getDb();
   const row = db.prepare(`
     SELECT
@@ -54,12 +65,21 @@ function getCustomerDue(customerId) {
         SELECT COALESCE(SUM(p.amount), 0)
         FROM payments p
         WHERE p.customer_id = ?
-      ), 2) AS total_due
+      ), 2) AS net_balance
     FROM entries e
     WHERE e.customer_id = ?
   `).get(customerId, customerId);
 
-  return row ? Math.max(0, row.total_due || 0) : 0;
+  return row ? (row.net_balance || 0) : 0;
+}
+
+/**
+ * Calculates customer's exact total due from ledger data:
+ * total_due = SUM(entries.due_amount) - SUM(payments.amount)
+ */
+function getCustomerDue(customerId) {
+  const bal = getCustomerBalance(customerId);
+  return Math.max(0, bal);
 }
 
 /**
@@ -92,7 +112,7 @@ function addEntry({ customerId, totalAmount, amountPaid, medicines, entryDate })
   const tx = db.transaction(() => {
     // 1. Verify customer
     const customer = db.prepare('SELECT * FROM customers WHERE customer_id = ?').get(customerId);
-    if (!customer) {
+    if (!customer || customer.deleted_at) {
       throw new Error('Customer not found');
     }
 
@@ -166,7 +186,7 @@ function recordPayment({ customerId, amount, note }) {
   }
 
   const customer = db.prepare('SELECT * FROM customers WHERE customer_id = ?').get(customerId);
-  if (!customer) {
+  if (!customer || customer.deleted_at) {
     throw new Error('Customer not found');
   }
 
@@ -272,12 +292,192 @@ function autocompleteMedicines(query) {
   `).all(`%${q}%`).map((r) => r.medicine_name);
 }
 
+/**
+ * Soft deletes a customer: sets deleted_at = CURRENT_TIMESTAMP
+ * Strictly blocked if net balance != 0
+ */
+function softDeleteCustomer(customerId) {
+  const db = getDb();
+  const customer = db.prepare('SELECT * FROM customers WHERE customer_id = ?').get(customerId);
+  if (!customer) {
+    const err = new Error('Customer not found');
+    err.status = 404;
+    throw err;
+  }
+
+  if (customer.deleted_at) {
+    const err = new Error('Customer is already in the Recycle Bin');
+    err.status = 400;
+    throw err;
+  }
+
+  const balance = getCustomerBalance(customerId);
+  if (Math.abs(balance) > 0.001) {
+    const err = new Error(
+      balance > 0
+        ? `Cannot delete customer with outstanding dues: currently ₹${balance.toFixed(2)} due.`
+        : `Cannot delete customer with credit balance: currently ₹${Math.abs(balance).toFixed(2)} in credit.`
+    );
+    err.status = 409;
+    err.due = balance;
+    throw err;
+  }
+
+  db.prepare(`
+    UPDATE customers
+    SET deleted_at = datetime('now'), updated_at = datetime('now')
+    WHERE customer_id = ?
+  `).run(customerId);
+
+  return { success: true, customerId, message: `Customer "${customer.name}" moved to Recycle Bin.` };
+}
+
+/**
+ * Restores a soft-deleted customer from the Recycle Bin
+ */
+function restoreCustomer(customerId) {
+  const db = getDb();
+  const customer = db.prepare('SELECT * FROM customers WHERE customer_id = ?').get(customerId);
+  if (!customer) {
+    const err = new Error('Customer not found');
+    err.status = 404;
+    throw err;
+  }
+
+  if (!customer.deleted_at) {
+    const err = new Error('Customer is not in the Recycle Bin');
+    err.status = 400;
+    throw err;
+  }
+
+  db.prepare(`
+    UPDATE customers
+    SET deleted_at = NULL, updated_at = datetime('now')
+    WHERE customer_id = ?
+  `).run(customerId);
+
+  const restored = db.prepare('SELECT * FROM customers WHERE customer_id = ?').get(customerId);
+  return {
+    ...restored,
+    total_due: getCustomerDue(customerId),
+  };
+}
+
+/**
+ * Lists all customers currently in the Recycle Bin
+ */
+function getTrashCustomers() {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT
+      customer_id, phone_number, name, village, address, created_at, updated_at, deleted_at,
+      ROUND(julianday('now') - julianday(deleted_at)) AS days_ago
+    FROM customers
+    WHERE deleted_at IS NOT NULL
+    ORDER BY deleted_at DESC
+  `).all();
+
+  return rows.map((c) => ({
+    ...c,
+    total_due: getCustomerDue(c.customer_id),
+    days_ago: Math.max(0, parseInt(c.days_ago, 10) || 0),
+  }));
+}
+
+/**
+ * Permanently deletes a customer and all their transaction history
+ * Allowed ONLY if customer is already in the Recycle Bin
+ * Takes a backup snapshot first, then executes in ONE transaction
+ */
+function permanentDeleteCustomer(customerId) {
+  const db = getDb();
+  const customer = db.prepare('SELECT * FROM customers WHERE customer_id = ?').get(customerId);
+  if (!customer) {
+    const err = new Error('Customer not found');
+    err.status = 404;
+    throw err;
+  }
+
+  if (!customer.deleted_at) {
+    const err = new Error('Customer must be in the Recycle Bin before permanent deletion');
+    err.status = 400;
+    throw err;
+  }
+
+  // Pre-deletion safety backup snapshot
+  const { performBackup } = require('../services/backupService');
+  performBackup(true);
+
+  // In ONE transaction: delete entry_medicine, entries, payments, and customer in order
+  const tx = db.transaction(() => {
+    db.prepare(`
+      DELETE FROM entry_medicine
+      WHERE entry_id IN (SELECT entry_id FROM entries WHERE customer_id = ?)
+    `).run(customerId);
+
+    db.prepare('DELETE FROM entries WHERE customer_id = ?').run(customerId);
+    db.prepare('DELETE FROM payments WHERE customer_id = ?').run(customerId);
+    db.prepare('DELETE FROM customers WHERE customer_id = ?').run(customerId);
+  });
+
+  tx();
+
+  return { success: true, customerId, message: `Customer "${customer.name}" and all historical data permanently deleted.` };
+}
+
+/**
+ * Auto-purges bin items older than retentionDays (default 30 days)
+ * Takes a backup snapshot first, then permanently deletes expired items
+ */
+function autoPurgeTrash(retentionDays = config.TRASH_RETENTION_DAYS || 30) {
+  const db = getDb();
+  const days = parseInt(retentionDays, 10) || 30;
+
+  const expiredCustomers = db.prepare(`
+    SELECT customer_id, name, deleted_at
+    FROM customers
+    WHERE deleted_at IS NOT NULL
+      AND deleted_at <= datetime('now', '-' || ? || ' days')
+  `).all(days);
+
+  if (expiredCustomers.length === 0) {
+    return { purgedCount: 0 };
+  }
+
+  // Pre-purge safety backup snapshot
+  const { performBackup } = require('../services/backupService');
+  performBackup(true);
+
+  const tx = db.transaction(() => {
+    for (const c of expiredCustomers) {
+      db.prepare(`
+        DELETE FROM entry_medicine
+        WHERE entry_id IN (SELECT entry_id FROM entries WHERE customer_id = ?)
+      `).run(c.customer_id);
+
+      db.prepare('DELETE FROM entries WHERE customer_id = ?').run(c.customer_id);
+      db.prepare('DELETE FROM payments WHERE customer_id = ?').run(c.customer_id);
+      db.prepare('DELETE FROM customers WHERE customer_id = ?').run(c.customer_id);
+    }
+  });
+
+  tx();
+  console.log(`[RecycleBin] Auto-purged ${expiredCustomers.length} customer(s) older than ${days} days.`);
+  return { purgedCount: expiredCustomers.length };
+}
+
 module.exports = {
   getDb,
   closeDb,
   getCustomerDue,
+  getCustomerBalance,
   addEntry,
   recordPayment,
   getCustomerStats,
   autocompleteMedicines,
+  softDeleteCustomer,
+  restoreCustomer,
+  getTrashCustomers,
+  permanentDeleteCustomer,
+  autoPurgeTrash,
 };

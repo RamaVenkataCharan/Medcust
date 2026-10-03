@@ -365,13 +365,11 @@ export default function CustomerProfileScreen({ route, navigation }) {
               <View style={styles.deleteIconWrap}>
                 <Ionicons name="trash-outline" size={22} color={COLORS.danger} />
               </View>
-              <Text style={styles.deleteModalTitle}>Delete Customer?</Text>
+              <Text style={styles.deleteModalTitle}>Move to Recycle Bin?</Text>
             </View>
 
             <Text style={styles.deleteModalMessage}>
-              {ledger.length > 0
-                ? `Delete ${customer.name} and all ${ledger.length} purchase record${ledger.length === 1 ? '' : 's'}? This cannot be undone.`
-                : `Delete ${customer.name}? This cannot be undone.`}
+              Move "{customer.name}" to the Recycle Bin? The customer will be hidden from active search. All purchase entries and payments will remain preserved and can be restored anytime from Settings.
             </Text>
 
             <View style={styles.modalActions}>
@@ -390,12 +388,12 @@ export default function CustomerProfileScreen({ route, navigation }) {
                 onPress={confirmDeleteCustomer}
                 disabled={deleting}
                 accessibilityRole="button"
-                accessibilityLabel="Delete Customer Permanently"
+                accessibilityLabel="Move to Recycle Bin"
               >
                 {deleting ? (
                   <ActivityIndicator size="small" color={COLORS.textInverted} />
                 ) : (
-                  <Text style={styles.deleteConfirmBtnText}>Delete Permanently</Text>
+                  <Text style={styles.deleteConfirmBtnText}>Move to Bin</Text>
                 )}
               </TouchableOpacity>
             </View>

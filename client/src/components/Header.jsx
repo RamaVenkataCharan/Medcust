@@ -1,12 +1,22 @@
 import React, { useState } from 'react';
-import { BookOpen, FileText, HardDrive, Search, ShieldCheck } from 'lucide-react';
+import { BookOpen, FileText, HardDrive, Search, ShieldCheck, Trash2 } from 'lucide-react';
 import { api } from '../utils/api';
 import { useToast } from './Toast';
 import BackupModal from './BackupModal';
+import RecycleBinModal from './RecycleBinModal';
 
-export default function Header({ currentView, setCurrentView, onBackToSearch, onLock }) {
+export default function Header({
+  currentView,
+  setCurrentView,
+  onBackToSearch,
+  onLock,
+  trashCount = 0,
+  onTrashUpdated,
+  onCustomerRestored,
+}) {
   const { addToast } = useToast();
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
+  const [isRecycleBinOpen, setIsRecycleBinOpen] = useState(false);
 
   return (
     <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs select-none">
@@ -64,8 +74,23 @@ export default function Header({ currentView, setCurrentView, onBackToSearch, on
             </button>
           </nav>
 
-          {/* Right actions: Backup & Local status */}
+          {/* Right actions: Backup, Recycle Bin & Local status */}
           <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => setIsRecycleBinOpen(true)}
+              className="relative flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-colors shadow-2xs"
+              title="Recycle Bin (Deleted Customers)"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-slate-500" />
+              <span>Recycle Bin</span>
+              {trashCount > 0 && (
+                <span className="ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200">
+                  {trashCount}
+                </span>
+              )}
+            </button>
+
             <button
               onClick={() => setIsBackupModalOpen(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-colors shadow-2xs"
@@ -98,6 +123,19 @@ export default function Header({ currentView, setCurrentView, onBackToSearch, on
       <BackupModal
         isOpen={isBackupModalOpen}
         onClose={() => setIsBackupModalOpen(false)}
+      />
+
+      {/* Recycle Bin Modal */}
+      <RecycleBinModal
+        isOpen={isRecycleBinOpen}
+        onClose={() => setIsRecycleBinOpen(false)}
+        onCustomerRestored={(cust) => {
+          if (onCustomerRestored) onCustomerRestored(cust);
+          if (onTrashUpdated) onTrashUpdated();
+        }}
+        onCustomerPermanentlyDeleted={() => {
+          if (onTrashUpdated) onTrashUpdated();
+        }}
       />
     </header>
   );

@@ -13,4 +13,5 @@ module.exports = {
   },
   DB_PATH: path.join(__dirname, 'db', 'medtrack.sqlite'),
   BACKUP_DIR: path.join(__dirname, 'db', 'backups'),
+  TRASH_RETENTION_DAYS: parseInt(process.env.TRASH_RETENTION_DAYS, 10) || 30,
 };

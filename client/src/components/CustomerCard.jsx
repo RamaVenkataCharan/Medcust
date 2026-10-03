@@ -1,5 +1,5 @@
 import React from 'react';
-import { Phone, MapPin, Calendar, PlusCircle, CreditCard, ArrowLeft, Clock } from 'lucide-react';
+import { Phone, MapPin, Calendar, PlusCircle, CreditCard, ArrowLeft, Clock, Trash2 } from 'lucide-react';
 import { formatRelativeTime } from '../utils/formatting';
 import DuesBadge from './DuesBadge';
 
@@ -8,6 +8,7 @@ export default function CustomerCard({
   onAddPurchase,
   onCollectPayment,
   onBackToSearch,
+  onDeleteCustomer,
 }) {
   if (!customer) return null;
 
@@ -24,9 +25,23 @@ export default function CustomerCard({
           <span>Back to Search</span>
         </button>
 
-        <div className="flex items-center gap-1.5 text-xs text-slate-500">
-          <Clock className="w-3.5 h-3.5 text-slate-400" />
-          <span>Last Visit: <strong className="text-slate-700">{formatRelativeTime(customer.last_visit)}</strong></span>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 text-xs text-slate-500">
+            <Clock className="w-3.5 h-3.5 text-slate-400" />
+            <span>Last Visit: <strong className="text-slate-700">{formatRelativeTime(customer.last_visit)}</strong></span>
+          </div>
+
+          {onDeleteCustomer && (
+            <button
+              type="button"
+              onClick={onDeleteCustomer}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 border border-rose-200 rounded-xl transition-all shadow-2xs"
+              title="Move customer to Recycle Bin"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Delete Customer</span>
+            </button>
+          )}
         </div>
       </div>
 

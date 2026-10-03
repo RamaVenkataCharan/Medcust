@@ -33,7 +33,8 @@ function initNativeDatabase() {
       name TEXT NOT NULL,
       village TEXT,
       address TEXT,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      deleted_at TEXT DEFAULT NULL
     );
 
     CREATE TABLE IF NOT EXISTS entries (
@@ -68,6 +69,7 @@ function initNativeDatabase() {
     INSERT OR IGNORE INTO shop_profile (id) VALUES (1);
 
     CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone_number);
+    CREATE INDEX IF NOT EXISTS idx_customers_deleted ON customers(deleted_at);
     CREATE INDEX IF NOT EXISTS idx_entries_customer ON entries(customer_id);
     CREATE INDEX IF NOT EXISTS idx_entry_meds_entry ON entry_medicines(entry_id);
 
@@ -86,6 +88,22 @@ function initNativeDatabase() {
     }
   } catch (migErr) {
     console.warn('[MedTrack] Migration check for discount column:', migErr);
+  }
+
+  // Schema migration: guarantee deleted_at column exists on customers for existing databases
+  try {
+    const custInfo = db.getAllSync(`PRAGMA table_info(customers);`);
+    const hasDeletedAt = custInfo.some((col) => col.name === 'deleted_at');
+    if (!hasDeletedAt) {
+      db.execSync(`ALTER TABLE customers ADD COLUMN deleted_at TEXT DEFAULT NULL;`);
+    }
+  } catch (migErr) {
+    console.warn('[MedTrack] Migration check for deleted_at column:', migErr);
+  }
+  try {
+    db.execSync(`CREATE INDEX IF NOT EXISTS idx_customers_deleted ON customers(deleted_at);`);
+  } catch (idxErr) {
+    // Ignore index error
   }
 }
 
@@ -110,6 +128,11 @@ function getWebState() {
           pharmacist_phone: '',
           pharmacist_license_validity: '',
         };
+      }
+      if (Array.isArray(parsed.customers)) {
+        parsed.customers.forEach((c) => {
+          if (c.deleted_at === undefined) c.deleted_at = null;
+        });
       }
       if (Array.isArray(parsed.entry_medicines)) {
         parsed.entry_medicines.forEach((m) => {
@@ -177,7 +200,8 @@ export function searchCustomers(query = '') {
     const state = getWebState();
     const trimmed = query.trim().toLowerCase();
 
-    const results = state.customers.map((c) => {
+    const activeCustomers = state.customers.filter((c) => !c.deleted_at);
+    const results = activeCustomers.map((c) => {
       const customerEntries = state.entries.filter((e) => e.customer_id === c.customer_id);
       const totalDue = calculateCustomerTotalDue(customerEntries);
       const lastEntry = customerEntries[customerEntries.length - 1];
@@ -216,6 +240,7 @@ export function searchCustomers(query = '') {
         MAX(e.entry_date) AS last_activity
       FROM customers c
       LEFT JOIN entries e ON c.customer_id = e.customer_id
+      WHERE c.deleted_at IS NULL
       GROUP BY c.customer_id
       ORDER BY COALESCE(MAX(e.entry_date), c.created_at) DESC
       LIMIT 100;
@@ -235,19 +260,19 @@ export function searchCustomers(query = '') {
       MAX(e.entry_date) AS last_activity
     FROM customers c
     LEFT JOIN entries e ON c.customer_id = e.customer_id
-    WHERE c.phone_number LIKE ? OR c.name LIKE ?
+    WHERE c.deleted_at IS NULL AND (c.phone_number LIKE ? OR c.name LIKE ?)
     GROUP BY c.customer_id
     ORDER BY c.name ASC
     LIMIT 50;
   `, [pattern, pattern]);
 }
 
-export function getCustomerById(customerId) {
+export function getCustomerById(customerId, includeDeleted = false) {
   const numericId = parseInt(customerId, 10);
 
   if (Platform.OS === 'web') {
     const state = getWebState();
-    const cust = state.customers.find((c) => c.customer_id === numericId);
+    const cust = state.customers.find((c) => c.customer_id === numericId && (includeDeleted || !c.deleted_at));
     if (!cust) return null;
 
     const custEntries = state.entries.filter((e) => e.customer_id === numericId);
@@ -270,13 +295,14 @@ export function getCustomerById(customerId) {
       c.village, 
       c.address, 
       c.created_at,
+      c.deleted_at,
       ROUND(COALESCE(SUM(e.due_amount), 0), 2) AS total_due,
       COUNT(e.entry_id) AS total_entries
     FROM customers c
     LEFT JOIN entries e ON c.customer_id = e.customer_id
-    WHERE c.customer_id = ?
+    WHERE c.customer_id = ? AND (? = 1 OR c.deleted_at IS NULL)
     GROUP BY c.customer_id;
-  `, [numericId]);
+  `, [numericId, includeDeleted ? 1 : 0]);
 }
 
 export function getCustomerByPhone(phoneNumber) {
@@ -328,27 +354,85 @@ export function addCustomer({ name, phone_number, village, address }) {
 export function deleteCustomer(customerId) {
   const numericId = parseInt(customerId, 10);
   if (!numericId) return false;
+  const now = getCurrentLocalIso();
 
   if (Platform.OS === 'web') {
     const state = getWebState();
-    // 1. Identify all entries belonging to this customer
+    const cust = state.customers.find((c) => c.customer_id === numericId);
+    if (!cust) return false;
+    cust.deleted_at = now;
+    saveWebState(state);
+    return true;
+  }
+
+  // Native expo-sqlite
+  const db = getNativeDb();
+  db.runSync(`
+    UPDATE customers SET deleted_at = ? WHERE customer_id = ?;
+  `, [now, numericId]);
+
+  return true;
+}
+
+export function getTrashCustomers() {
+  if (Platform.OS === 'web') {
+    const state = getWebState();
+    return state.customers
+      .filter((c) => Boolean(c.deleted_at))
+      .map((c) => ({ ...c }))
+      .sort((a, b) => new Date(b.deleted_at) - new Date(a.deleted_at));
+  }
+
+  // Native expo-sqlite
+  const db = getNativeDb();
+  return db.getAllSync(`
+    SELECT customer_id, phone_number, name, village, address, created_at, deleted_at
+    FROM customers
+    WHERE deleted_at IS NOT NULL
+    ORDER BY deleted_at DESC;
+  `);
+}
+
+export function restoreCustomer(customerId) {
+  const numericId = parseInt(customerId, 10);
+  if (!numericId) return false;
+
+  if (Platform.OS === 'web') {
+    const state = getWebState();
+    const cust = state.customers.find((c) => c.customer_id === numericId);
+    if (!cust) return false;
+    cust.deleted_at = null;
+    saveWebState(state);
+    return true;
+  }
+
+  // Native expo-sqlite
+  const db = getNativeDb();
+  db.runSync(`
+    UPDATE customers SET deleted_at = NULL WHERE customer_id = ?;
+  `, [numericId]);
+
+  return true;
+}
+
+export function permanentDeleteCustomer(customerId) {
+  const numericId = parseInt(customerId, 10);
+  if (!numericId) return false;
+
+  if (Platform.OS === 'web') {
+    const state = getWebState();
     const customerEntries = state.entries.filter((e) => e.customer_id === numericId);
     const entryIds = new Set(customerEntries.map((e) => e.entry_id));
 
-    // 2. Cascade delete related medicines
     state.entry_medicines = state.entry_medicines.filter((m) => !entryIds.has(m.entry_id));
-
-    // 3. Cascade delete entries
     state.entries = state.entries.filter((e) => e.customer_id !== numericId);
-
-    // 4. Delete the customer
     state.customers = state.customers.filter((c) => c.customer_id !== numericId);
 
     saveWebState(state);
     return true;
   }
 
-  // Native expo-sqlite
+  // Native expo-sqlite: atomic cascade delete
   const db = getNativeDb();
   db.withTransactionSync(() => {
     // 1. Cascade delete entry_medicines for all entries of this customer
@@ -645,7 +729,10 @@ export function exportAllData() {
     return {
       version: '1.0',
       exportedAt: getCurrentLocalIso(),
-      customers: state.customers,
+      customers: (state.customers || []).map((c) => ({
+        ...c,
+        deleted_at: c.deleted_at || null,
+      })),
       entries: state.entries,
       entryMedicines: state.entry_medicines,
       shopProfile,
@@ -666,5 +753,77 @@ export function exportAllData() {
     entryMedicines,
     shopProfile,
   };
+}
+
+export function importAllData(data) {
+  if (!data || !Array.isArray(data.customers)) {
+    throw new Error('Invalid backup file structure.');
+  }
+
+  // Ensure backward compatibility: if deleted_at is missing from an older backup, default to null
+  const sanitizedCustomers = (data.customers || []).map((c) => ({
+    customer_id: c.customer_id,
+    phone_number: c.phone_number,
+    name: c.name,
+    village: c.village || null,
+    address: c.address || null,
+    created_at: c.created_at || getCurrentLocalIso(),
+    deleted_at: c.deleted_at || null,
+  }));
+
+  if (Platform.OS === 'web') {
+    const nextCustId = sanitizedCustomers.length > 0 ? Math.max(...sanitizedCustomers.map((c) => c.customer_id || 0)) + 1 : 1;
+    const nextEntId = (data.entries || []).length > 0 ? Math.max(...(data.entries || []).map((e) => e.entry_id || 0)) + 1 : 1;
+    const medsList = data.entryMedicines || data.entry_medicines || [];
+    const nextMedId = medsList.length > 0 ? Math.max(...medsList.map((m) => m.id || 0)) + 1 : 1;
+
+    const state = {
+      customers: sanitizedCustomers,
+      entries: data.entries || [],
+      entry_medicines: medsList,
+      shop_profile: data.shopProfile || data.shop_profile || {},
+      nextCustomerId: nextCustId,
+      nextEntryId: nextEntId,
+      nextMedicineId: nextMedId,
+    };
+    saveWebState(state);
+    return true;
+  }
+
+  // Native expo-sqlite
+  const db = getNativeDb();
+  db.withTransactionSync(() => {
+    db.runSync(`DELETE FROM entry_medicines;`);
+    db.runSync(`DELETE FROM entries;`);
+    db.runSync(`DELETE FROM customers;`);
+
+    for (const c of sanitizedCustomers) {
+      db.runSync(`
+        INSERT INTO customers (customer_id, phone_number, name, village, address, created_at, deleted_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?);
+      `, [c.customer_id, c.phone_number, c.name, c.village, c.address, c.created_at, c.deleted_at]);
+    }
+
+    for (const e of (data.entries || [])) {
+      db.runSync(`
+        INSERT INTO entries (entry_id, customer_id, entry_date, total_amount, amount_paid, due_amount)
+        VALUES (?, ?, ?, ?, ?, ?);
+      `, [e.entry_id, e.customer_id, e.entry_date, e.total_amount, e.amount_paid, e.due_amount]);
+    }
+
+    const meds = data.entryMedicines || data.entry_medicines || [];
+    for (const m of meds) {
+      db.runSync(`
+        INSERT INTO entry_medicines (id, entry_id, medicine_name, price, discount)
+        VALUES (?, ?, ?, ?, ?);
+      `, [m.id, m.entry_id, m.medicine_name, m.price || 0, m.discount || 0]);
+    }
+
+    if (data.shopProfile || data.shop_profile) {
+      saveShopProfile(data.shopProfile || data.shop_profile);
+    }
+  });
+
+  return true;
 }
 

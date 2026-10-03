@@ -16,6 +16,18 @@ async function handleResponse(res) {
     if (data.existingCustomer) {
       err.existingCustomer = data.existingCustomer;
     }
+    if (data.inRecycleBin) {
+      err.inRecycleBin = data.inRecycleBin;
+    }
+    if (data.customer) {
+      err.customer = data.customer;
+    }
+    if (data.due !== undefined) {
+      err.due = data.due;
+    }
+    if (data.balance !== undefined) {
+      err.balance = data.balance;
+    }
     throw err;
   }
   return res.json();
@@ -35,6 +47,17 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
+    }).then(handleResponse),
+  deleteCustomer: (id) =>
+    fetch(`${API_BASE}/customers/${id}`, { method: 'DELETE' }).then(handleResponse),
+  getTrash: () => fetch(`${API_BASE}/customers/trash`).then(handleResponse),
+  restoreCustomer: (id) =>
+    fetch(`${API_BASE}/customers/${id}/restore`, { method: 'POST' }).then(handleResponse),
+  permanentDeleteCustomer: (id, confirm = 'DELETE') =>
+    fetch(`${API_BASE}/customers/${id}/permanent`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirm }),
     }).then(handleResponse),
 
   // Entries (Purchases)

@@ -5,6 +5,7 @@ import Home from './pages/Home';
 import CustomerProfile from './pages/CustomerProfile';
 import DuesReport from './pages/DuesReport';
 import PinLockModal from './components/PinLockModal';
+import { api } from './utils/api';
 
 const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes auto-lock
 
@@ -12,7 +13,21 @@ export default function App() {
   const [currentView, setCurrentView] = useState('home'); // 'home' | 'profile' | 'dues'
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
   const [isLocked, setIsLocked] = useState(true);
+  const [trashCount, setTrashCount] = useState(0);
   const timerRef = useRef(null);
+
+  const refreshTrashCount = async () => {
+    try {
+      const list = await api.getTrash();
+      setTrashCount(list ? list.length : 0);
+    } catch (e) {
+      console.warn('Could not fetch trash count:', e.message);
+    }
+  };
+
+  useEffect(() => {
+    refreshTrashCount();
+  }, []);
 
   // Inactivity Auto-Lock
   const resetInactivityTimer = () => {
@@ -58,6 +73,12 @@ export default function App() {
           setCurrentView={setCurrentView}
           onBackToSearch={handleBackToSearch}
           onLock={() => setIsLocked(true)}
+          trashCount={trashCount}
+          onTrashUpdated={refreshTrashCount}
+          onCustomerRestored={(cust) => {
+            refreshTrashCount();
+            handleSelectCustomer(cust);
+          }}
         />
 
         {/* Main Content View */}
@@ -66,6 +87,7 @@ export default function App() {
             <Home
               onSelectCustomer={handleSelectCustomer}
               onOpenDuesReport={() => setCurrentView('dues')}
+              onTrashUpdated={refreshTrashCount}
             />
           )}
 
@@ -73,6 +95,10 @@ export default function App() {
             <CustomerProfile
               customerId={selectedCustomerId}
               onBackToSearch={handleBackToSearch}
+              onCustomerDeleted={() => {
+                refreshTrashCount();
+                handleBackToSearch();
+              }}
             />
           )}
 

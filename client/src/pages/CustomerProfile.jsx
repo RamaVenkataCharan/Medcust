@@ -8,17 +8,20 @@ import {
   Clock,
   ArrowRight,
   TrendingUp,
+  AlertCircle,
+  Trash2,
 } from 'lucide-react';
 import CustomerCard from '../components/CustomerCard';
 import EntryList from '../components/EntryList';
 import EntryForm from '../components/EntryForm';
 import PaymentForm from '../components/PaymentForm';
+import Modal from '../components/Modal';
 import { api } from '../utils/api';
 import { useToast } from '../components/Toast';
 import { formatDate, formatCurrency } from '../utils/formatting';
 import confetti from 'canvas-confetti';
 
-export default function CustomerProfile({ customerId, onBackToSearch }) {
+export default function CustomerProfile({ customerId, onBackToSearch, onCustomerDeleted }) {
   const { addToast } = useToast();
 
   const [customer, setCustomer] = useState(null);
@@ -37,6 +40,28 @@ export default function CustomerProfile({ customerId, onBackToSearch }) {
   // Modals
   const [isEntryModalOpen, setIsEntryModalOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDeleteCustomer = async () => {
+    setIsDeleting(true);
+    setDeleteError('');
+    try {
+      await api.deleteCustomer(customer.customer_id);
+      addToast(`Customer "${customer.name}" moved to Recycle Bin`, 'info');
+      setIsDeleteModalOpen(false);
+      if (onCustomerDeleted) {
+        onCustomerDeleted(customer.customer_id);
+      } else {
+        onBackToSearch();
+      }
+    } catch (err) {
+      setDeleteError(err.message || 'Cannot delete customer. Outstanding dues must be 0.');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const fetchCustomerData = async () => {
     try {
@@ -144,6 +169,10 @@ export default function CustomerProfile({ customerId, onBackToSearch }) {
         onAddPurchase={() => setIsEntryModalOpen(true)}
         onCollectPayment={() => setIsPaymentModalOpen(true)}
         onBackToSearch={onBackToSearch}
+        onDeleteCustomer={() => {
+          setDeleteError('');
+          setIsDeleteModalOpen(true);
+        }}
       />
 
       {/* Profile Section Tabs */}
@@ -309,6 +338,59 @@ export default function CustomerProfile({ customerId, onBackToSearch }) {
         customer={customer}
         onSuccess={handlePaymentSuccess}
       />
+
+      {/* Delete Customer Confirmation Modal */}
+      <Modal
+        isOpen={isDeleteModalOpen}
+        onClose={() => {
+          setIsDeleteModalOpen(false);
+          setDeleteError('');
+        }}
+        title="Delete Customer"
+        subtitle="Soft delete customer from active ledger"
+        maxWidth="max-w-md"
+      >
+        <div className="space-y-4 text-xs">
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 space-y-1">
+            <p className="font-semibold">Move "{customer.name}" to Recycle Bin?</p>
+            <p className="text-[11px] text-amber-800 leading-relaxed">
+              The customer will be hidden from search, dues reports, and active accounts.
+              Their historical purchase entries and payments will remain safely archived.
+            </p>
+          </div>
+
+          {deleteError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 space-y-1">
+              <div className="flex items-center gap-1.5 font-bold text-rose-700">
+                <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                <span>Deletion Blocked</span>
+              </div>
+              <p className="text-[11px] leading-relaxed">{deleteError}</p>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => {
+                setIsDeleteModalOpen(false);
+                setDeleteError('');
+              }}
+              className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-medium"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleDeleteCustomer}
+              disabled={isDeleting}
+              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold transition-colors disabled:opacity-50"
+            >
+              {isDeleting ? 'Deleting...' : 'Move to Recycle Bin'}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

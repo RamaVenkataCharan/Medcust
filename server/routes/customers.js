@@ -1,10 +1,18 @@
 const express = require('express');
 const router = express.Router();
-const { getDb, getCustomerDue, getCustomerStats } = require('../db/database');
+const {
+  getDb,
+  getCustomerDue,
+  getCustomerStats,
+  softDeleteCustomer,
+  restoreCustomer,
+  getTrashCustomers,
+  permanentDeleteCustomer,
+} = require('../db/database');
 
 /**
  * GET /api/customers/search?q=...
- * Primary search by 10-digit phone number, fallback by name or village
+ * Primary search by 10-digit phone number, fallback by name or village (active customers only)
  */
 router.get('/search', (req, res) => {
   try {
@@ -22,7 +30,7 @@ router.get('/search', (req, res) => {
       rows = db.prepare(`
         SELECT customer_id, phone_number, name, village, address, created_at, updated_at
         FROM customers
-        WHERE phone_number LIKE ?
+        WHERE phone_number LIKE ? AND deleted_at IS NULL
         ORDER BY
           CASE WHEN phone_number = ? THEN 0 ELSE 1 END,
           phone_number ASC
@@ -33,7 +41,7 @@ router.get('/search', (req, res) => {
       rows = db.prepare(`
         SELECT customer_id, phone_number, name, village, address, created_at, updated_at
         FROM customers
-        WHERE name LIKE ? OR village LIKE ?
+        WHERE (name LIKE ? OR village LIKE ?) AND deleted_at IS NULL
         ORDER BY name ASC
         LIMIT 15
       `).all(`%${query}%`, `%${query}%`);
@@ -52,15 +60,33 @@ router.get('/search', (req, res) => {
 });
 
 /**
+ * GET /api/customers/trash
+ * List all soft-deleted customers in the Recycle Bin
+ * NOTE: Must be registered BEFORE /:id
+ */
+router.get('/trash', (req, res) => {
+  try {
+    const trash = getTrashCustomers();
+    res.json(trash);
+  } catch (err) {
+    console.error('List trash error:', err);
+    res.status(500).json({ error: 'Failed to retrieve recycle bin customers' });
+  }
+});
+
+/**
  * GET /api/customers/:id
- * Full profile with computed due, last visit, and lifetime spend
+ * Full profile with computed due, last visit, and lifetime spend (active customers only)
  */
 router.get('/:id', (req, res) => {
   try {
     const customerId = parseInt(req.params.id, 10);
-    const db = getDb();
+    if (isNaN(customerId)) {
+      return res.status(400).json({ error: 'Invalid customer ID' });
+    }
 
-    const customer = db.prepare('SELECT * FROM customers WHERE customer_id = ?').get(customerId);
+    const db = getDb();
+    const customer = db.prepare('SELECT * FROM customers WHERE customer_id = ? AND deleted_at IS NULL').get(customerId);
     if (!customer) {
       return res.status(404).json({ error: 'Customer not found' });
     }
@@ -89,6 +115,16 @@ router.get('/:id', (req, res) => {
 router.get('/:id/stats', (req, res) => {
   try {
     const customerId = parseInt(req.params.id, 10);
+    if (isNaN(customerId)) {
+      return res.status(400).json({ error: 'Invalid customer ID' });
+    }
+
+    const db = getDb();
+    const customer = db.prepare('SELECT customer_id FROM customers WHERE customer_id = ? AND deleted_at IS NULL').get(customerId);
+    if (!customer) {
+      return res.status(404).json({ error: 'Customer not found' });
+    }
+
     const stats = getCustomerStats(customerId);
     res.json(stats);
   } catch (err) {
@@ -119,6 +155,16 @@ router.post('/', (req, res) => {
     // Check duplicate
     const existing = db.prepare('SELECT * FROM customers WHERE phone_number = ?').get(cleanPhone);
     if (existing) {
+      if (existing.deleted_at) {
+        return res.status(409).json({
+          error: `Customer with phone ${cleanPhone} (${existing.name}) is in the Recycle Bin. You can restore them instead.`,
+          inRecycleBin: true,
+          customer: {
+            ...existing,
+            total_due: getCustomerDue(existing.customer_id),
+          },
+        });
+      }
       return res.status(409).json({
         error: `Customer with phone ${cleanPhone} already exists: ${existing.name} (${existing.village || 'No village'})`,
         existingCustomer: {
@@ -150,6 +196,76 @@ router.post('/', (req, res) => {
   } catch (err) {
     console.error('Create customer error:', err);
     res.status(500).json({ error: err.message || 'Failed to create customer' });
+  }
+});
+
+/**
+ * DELETE /api/customers/:id
+ * Soft delete customer into the Recycle Bin (blocks if due != 0)
+ */
+router.delete('/:id', (req, res) => {
+  try {
+    const customerId = parseInt(req.params.id, 10);
+    if (isNaN(customerId)) {
+      return res.status(400).json({ error: 'Invalid customer ID' });
+    }
+
+    const result = softDeleteCustomer(customerId);
+    res.json(result);
+  } catch (err) {
+    console.error('Soft delete customer error:', err);
+    const status = err.status || 500;
+    res.status(status).json({
+      error: err.message || 'Failed to delete customer',
+      due: err.due,
+    });
+  }
+});
+
+/**
+ * POST /api/customers/:id/restore
+ * Restore customer from the Recycle Bin
+ */
+router.post('/:id/restore', (req, res) => {
+  try {
+    const customerId = parseInt(req.params.id, 10);
+    if (isNaN(customerId)) {
+      return res.status(400).json({ error: 'Invalid customer ID' });
+    }
+
+    const restored = restoreCustomer(customerId);
+    res.json(restored);
+  } catch (err) {
+    console.error('Restore customer error:', err);
+    const status = err.status || 500;
+    res.status(status).json({ error: err.message || 'Failed to restore customer' });
+  }
+});
+
+/**
+ * DELETE /api/customers/:id/permanent
+ * Permanently delete customer and all child rows (requires { confirm: "DELETE" })
+ */
+router.delete('/:id/permanent', (req, res) => {
+  try {
+    const customerId = parseInt(req.params.id, 10);
+    if (isNaN(customerId)) {
+      return res.status(400).json({ error: 'Invalid customer ID' });
+    }
+
+    const { confirm } = req.body || {};
+    if (confirm !== 'DELETE') {
+      return res.status(400).json({
+        error: 'Permanent deletion requires confirmation phrase "DELETE"',
+      });
+    }
+
+    const result = permanentDeleteCustomer(customerId);
+    res.json(result);
+  } catch (err) {
+    console.error('Permanent delete customer error:', err);
+    const status = err.status || 500;
+    res.status(status).json({ error: err.message || 'Failed to permanently delete customer' });
   }
 });
 

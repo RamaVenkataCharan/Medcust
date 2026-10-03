@@ -8,7 +8,8 @@ CREATE TABLE IF NOT EXISTS customers (
   village TEXT,
   address TEXT,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  deleted_at TEXT DEFAULT NULL
 );
 
 CREATE TABLE IF NOT EXISTS entries (
@@ -38,6 +39,7 @@ CREATE TABLE IF NOT EXISTS payments (
 -- Indexes for sub-second search and queries
 CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone_number);
 CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name);
+CREATE INDEX IF NOT EXISTS idx_customers_deleted ON customers(deleted_at);
 CREATE INDEX IF NOT EXISTS idx_entries_customer ON entries(customer_id);
 CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(entry_date);
 CREATE INDEX IF NOT EXISTS idx_payments_customer ON payments(customer_id);

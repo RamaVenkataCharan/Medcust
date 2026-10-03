@@ -33,6 +33,7 @@ router.get('/dues', (req, res) => {
           WHERE p.customer_id = c.customer_id
         ) AS last_payment
       FROM customers c
+      WHERE c.deleted_at IS NULL
     `).all();
 
     // Compute derived total_due for each debtor
@@ -115,8 +116,8 @@ router.get('/stats', (req, res) => {
       WHERE pay_date >= datetime('now', 'start of month')
     `).get();
 
-    // All-time active outstanding dues
-    const customers = db.prepare('SELECT customer_id FROM customers').all();
+    // All-time active outstanding dues (excluding deleted customers)
+    const customers = db.prepare('SELECT customer_id FROM customers WHERE deleted_at IS NULL').all();
     let totalOutstanding = 0;
     let debtorCount = 0;
     for (const c of customers) {

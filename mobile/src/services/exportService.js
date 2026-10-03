@@ -1,5 +1,5 @@
 import { Platform, Alert } from 'react-native';
-import { exportAllData } from '../db/database';
+import { exportAllData, importAllData } from '../db/database';
 
 /**
  * Creates a complete JSON backup file and triggers download (Web) or native share sheet (Mobile).
@@ -58,6 +58,25 @@ export async function exportKhataBackup() {
   } catch (error) {
     console.error('Failed to export khata backup:', error);
     Alert.alert('Export Failed', 'Could not export backup: ' + (error.message || 'Unknown error'));
+    return { success: false, error };
+  }
+}
+
+/**
+ * Imports a JSON backup object or raw string into the database.
+ * Backward compatible: customers missing deleted_at safely default to null.
+ */
+export function importKhataBackup(backupInput) {
+  try {
+    let parsedData = backupInput;
+    if (typeof backupInput === 'string') {
+      parsedData = JSON.parse(backupInput);
+    }
+    const success = importAllData(parsedData);
+    return { success: true, count: parsedData.customers?.length || 0 };
+  } catch (error) {
+    console.error('Failed to import khata backup:', error);
+    Alert.alert('Import Failed', 'Could not restore backup: ' + (error.message || 'Corrupted file'));
     return { success: false, error };
   }
 }
