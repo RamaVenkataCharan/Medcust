@@ -13,4 +13,7 @@ module.exports = {
   },
   DB_PATH: path.join(__dirname, 'db', 'medtrack.sqlite'),
   BACKUP_DIR: path.join(__dirname, 'db', 'backups'),
+  TIMEZONE: process.env.TIMEZONE || 'Asia/Kolkata',
+  ADMIN_ALLOW_REMOTE: process.env.ADMIN_ALLOW_REMOTE === 'true',
+  CORS_ORIGINS: process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',') : ['http://localhost:3001', 'http://127.0.0.1:3001'],
 };
