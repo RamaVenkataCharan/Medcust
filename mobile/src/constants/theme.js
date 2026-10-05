@@ -13,10 +13,26 @@ export const COLORS = {
   textInverted: '#FFFFFF',
 
   // Terracotta Warm Accent
-  primary: '#C2593F',          // Warm terracotta / khata seal red
+  primary: '#B9533F',          // Warm terracotta (spec #B9533F)
   primaryDark: '#A3462E',
   primaryLight: '#FDF0EC',
   primaryBorder: '#F2C8BC',
+
+  // Avatar & Icon circle fills
+  avatarBg: '#F8DDD3',         // Peach tint for person-icon circles
+  greenCircleBg: '#D8EBD9',    // Light green circle for payment icon
+  greenText: '#2F5D3A',        // Dark green text / icon for payments
+
+  // Amber due banner
+  amberBannerBg: '#FDEBCB',    // Warm amber banner background
+  amberBannerText: '#A15C07',  // Amber bold due text
+
+  // Grand Total peach band (AddPurchaseScreen)
+  grandTotalBg: '#FBEEE8',     // Warm peach band for the Grand Total row
+
+  // Credit / neutral banner
+  creditBannerBg: '#F0F0F0',   // Neutral grey for credit balance
+  creditBannerText: '#555555',
 
   // Due & Payment Badges (Quiet & clean)
   dueBadgeBg: '#FEF3C7',       // Warm pale amber
