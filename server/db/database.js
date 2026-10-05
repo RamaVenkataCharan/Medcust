@@ -50,16 +50,19 @@ function getCustomerDue(customerId) {
   const db = getDb();
   const row = db.prepare(`
     SELECT
-      ROUND(COALESCE(SUM(e.due_amount), 0) - (
-        SELECT COALESCE(SUM(p.amount), 0)
-        FROM payments p
-        WHERE p.customer_id = ?
-      ), 2) AS total_due
+      (
+        COALESCE(SUM(CAST(ROUND(e.due_amount * 100) AS INTEGER)), 0) -
+        (
+          SELECT COALESCE(SUM(CAST(ROUND(p.amount * 100) AS INTEGER)), 0)
+          FROM payments p
+          WHERE p.customer_id = ?
+        )
+      ) AS total_paise
     FROM entries e
     WHERE e.customer_id = ?
   `).get(customerId, customerId);
 
-  return row ? Math.max(0, row.total_due || 0) : 0;
+  return row ? Math.max(0, Math.round(row.total_paise) / 100) : 0;
 }
 
 /**
@@ -68,26 +71,38 @@ function getCustomerDue(customerId) {
  */
 function addEntry({ customerId, totalAmount, amountPaid, medicines, entryDate }) {
   const db = getDb();
+  const { computeBill, toEntryPayload } = require('../services/discountEngine');
 
   if (!medicines || !Array.isArray(medicines) || medicines.length === 0) {
     throw new Error('Entry requires at least one medicine item');
   }
 
-  const cleanTotal = Math.round(parseFloat(totalAmount) * 100) / 100;
-  if (isNaN(cleanTotal) || cleanTotal <= 0) {
-    throw new Error('Total amount must be greater than 0');
+  const currentDue = getCustomerDue(customerId);
+  const bill = computeBill({
+    lines: medicines.map(m => ({ name: m.name || m.medicine_name, price: m.price, discount: m.discount, mode: m.discount_mode || 'amount' })),
+    paidNow: amountPaid,
+    currentDue
+  });
+
+  if (!bill.ok) {
+    const errorMsg = bill.errors.join(', ');
+    const err = new Error(`Bill calculation error: ${errorMsg}`);
+    err.code = 'BILL_COMPUTE_ERROR';
+    err.errors = bill.errors;
+    throw err;
   }
 
-  const cleanPaid = Math.round(parseFloat(amountPaid || 0) * 100) / 100;
-  if (isNaN(cleanPaid) || cleanPaid < 0) {
-    throw new Error('Amount paid cannot be negative');
-  }
+  const payload = toEntryPayload(bill);
 
-  if (cleanPaid > cleanTotal) {
-    throw new Error(`Amount paid (₹${cleanPaid}) cannot exceed total amount (₹${cleanTotal})`);
+  if (totalAmount !== undefined && totalAmount !== null) {
+    const clientTotal = Math.round(parseFloat(totalAmount) * 100) / 100;
+    if (clientTotal !== payload.total_amount) {
+      const err = new Error(`Total amount mismatch. Expected ${payload.total_amount}, got ${clientTotal}`);
+      err.code = 'TOTAL_MISMATCH';
+      err.expected = payload.total_amount;
+      throw err;
+    }
   }
-
-  const dueCreated = Math.round((cleanTotal - cleanPaid) * 100) / 100;
 
   const tx = db.transaction(() => {
     // 1. Verify customer
@@ -99,31 +114,29 @@ function addEntry({ customerId, totalAmount, amountPaid, medicines, entryDate })
     // 2. Insert entry
     const insertEntryStmt = db.prepare(`
       INSERT INTO entries (customer_id, entry_date, total_amount, amount_paid, due_amount)
-      VALUES (?, COALESCE(?, datetime('now')), ?, ?, ?)
+      VALUES (?, COALESCE(?, strftime('%Y-%m-%dT%H:%M:%fZ','now')), ?, ?, ?)
     `);
 
     const entryResult = insertEntryStmt.run(
       customerId,
       entryDate || null,
-      cleanTotal,
-      cleanPaid,
-      dueCreated
+      payload.total_amount,
+      payload.amount_paid,
+      payload.due_amount
     );
     const entryId = entryResult.lastInsertRowid;
 
     // 3. Insert line items into entry_medicine
     const insertMedStmt = db.prepare(`
-      INSERT INTO entry_medicine (entry_id, medicine_name, price)
-      VALUES (?, ?, ?)
+      INSERT INTO entry_medicine (entry_id, medicine_name, price, discount)
+      VALUES (?, ?, ?, ?)
     `);
 
     const insertedMeds = [];
-    for (const med of medicines) {
-      const name = (med.name || med.medicine_name || '').trim();
-      if (!name) continue;
-      const price = Math.round(parseFloat(med.price || 0) * 100) / 100;
-      insertMedStmt.run(entryId, name, price);
-      insertedMeds.push({ medicine_name: name, price });
+    for (const med of payload.items) {
+      if (!med.name) continue;
+      insertMedStmt.run(entryId, med.name, med.price, med.discount);
+      insertedMeds.push(med);
     }
 
     if (insertedMeds.length === 0) {
@@ -131,7 +144,7 @@ function addEntry({ customerId, totalAmount, amountPaid, medicines, entryDate })
     }
 
     // 4. Update customer updated_at
-    db.prepare(`UPDATE customers SET updated_at = datetime('now') WHERE customer_id = ?`).run(customerId);
+    db.prepare(`UPDATE customers SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE customer_id = ?`).run(customerId);
 
     // 5. Get refreshed total due
     const newTotalDue = getCustomerDue(customerId);
@@ -142,9 +155,9 @@ function addEntry({ customerId, totalAmount, amountPaid, medicines, entryDate })
       customerName: customer.name,
       phone: customer.phone_number,
       village: customer.village,
-      totalAmount: cleanTotal,
-      amountPaid: cleanPaid,
-      dueAmount: dueCreated,
+      totalAmount: payload.total_amount,
+      amountPaid: payload.amount_paid,
+      dueAmount: payload.due_amount,
       totalDue: newTotalDue,
       medicines: insertedMeds,
       entryDate: entryDate || new Date().toISOString(),

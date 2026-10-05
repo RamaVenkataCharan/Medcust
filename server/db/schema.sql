@@ -7,14 +7,14 @@ CREATE TABLE IF NOT EXISTS customers (
   name TEXT NOT NULL,
   village TEXT,
   address TEXT,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
 CREATE TABLE IF NOT EXISTS entries (
   entry_id INTEGER PRIMARY KEY AUTOINCREMENT,
   customer_id INTEGER NOT NULL REFERENCES customers(customer_id),
-  entry_date TEXT DEFAULT CURRENT_TIMESTAMP,
+  entry_date TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   total_amount REAL NOT NULL,
   amount_paid REAL NOT NULL,
   due_amount REAL NOT NULL
@@ -24,13 +24,14 @@ CREATE TABLE IF NOT EXISTS entry_medicine (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   entry_id INTEGER NOT NULL REFERENCES entries(entry_id),
   medicine_name TEXT NOT NULL,
-  price REAL NOT NULL DEFAULT 0
+  price REAL NOT NULL DEFAULT 0,
+  discount REAL NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS payments (
   payment_id INTEGER PRIMARY KEY AUTOINCREMENT,
   customer_id INTEGER NOT NULL REFERENCES customers(customer_id),
-  pay_date TEXT DEFAULT CURRENT_TIMESTAMP,
+  pay_date TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   amount REAL NOT NULL,
   note TEXT
 );
