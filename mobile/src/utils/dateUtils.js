@@ -52,3 +52,41 @@ export function formatLocalDateTime(dateString) {
 export function getCurrentLocalIso() {
   return new Date().toISOString();
 }
+
+/**
+ * Returns a compact date label: "Today", "Yesterday", or "28 Feb" (no year if same year).
+ * Used in ledger row headers.
+ */
+export function getDateLabel(dateString) {
+  if (!dateString) return '';
+
+  let normalized = dateString;
+  if (typeof dateString === 'string' && !dateString.includes('Z') && !dateString.includes('+')) {
+    normalized = dateString.replace(' ', 'T') + 'Z';
+  }
+
+  const date = new Date(normalized);
+  if (isNaN(date.getTime())) return dateString;
+
+  const now = new Date();
+
+  const isToday =
+    date.getDate() === now.getDate() &&
+    date.getMonth() === now.getMonth() &&
+    date.getFullYear() === now.getFullYear();
+  if (isToday) return 'Today';
+
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const isYesterday =
+    date.getDate() === yesterday.getDate() &&
+    date.getMonth() === yesterday.getMonth() &&
+    date.getFullYear() === yesterday.getFullYear();
+  if (isYesterday) return 'Yesterday';
+
+  return date.toLocaleDateString([], {
+    day: 'numeric',
+    month: 'short',
+    year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
+  });
+}
