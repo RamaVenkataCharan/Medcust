@@ -64,6 +64,7 @@ MedTrack Ecosystem
 | **Customer Profile** | Tab 2: Frequently Bought | ✅ Completed | Top 5 distinct medicines with repeat counts and recency indicators. |
 | **Customer Profile** | Tab 3: Payment History | ✅ Completed | Audit trail of all due clearance entries with dates, notes, and receipts. |
 | **Purchase Entry** | Multi-Line Medicine Entry | ✅ Completed | Dynamic repeatable rows with past medicine autocomplete suggestions. |
+| **Purchase Entry** | Per-Row Discount Engine | ✅ Completed | Server-authoritative integer paise calculation (amounts/percentages) mapped to SQLite. |
 | **Purchase Entry** | Live Due Calculation Banner | ✅ Completed | Real-time calculation of `total - paid = due` as cashier enters values. |
 | **Payments** | Due Clearance Settlement | ✅ Completed | Support for Cash, UPI/GPay, and Bank Transfer with instant due reduction. |
 | **Payments** | Overpayment Guardrail | ✅ Completed | Warns and requires explicit confirmation if payment exceeds existing due. |
