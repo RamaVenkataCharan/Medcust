@@ -4,6 +4,16 @@ const fs = require('fs');
 const config = require('../config');
 const { getDb, getCustomerDue } = require('../db/database');
 const { performBackup, listBackups, restoreBackup, generateCsvExport } = require('../services/backupService');
+const { getStartOfMonthISO, getMinus30DaysISO } = require('../utils/dateUtils');
+
+const loopbackOnly = (req, res, next) => {
+  if (config.ADMIN_ALLOW_REMOTE) return next();
+  const ip = req.ip || req.connection.remoteAddress;
+  if (['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(ip)) {
+    return next();
+  }
+  return res.status(403).json({ error: 'Forbidden: Admin operations are restricted to localhost' });
+};
 
 /**
  * GET /api/reports/dues
@@ -99,21 +109,23 @@ router.get('/stats', (req, res) => {
     const db = getDb();
 
     // Monthly sales & collections
+    const startOfMonth = getStartOfMonthISO();
+    
     const salesRow = db.prepare(`
       SELECT
         COALESCE(SUM(total_amount), 0) AS sales_month,
         COUNT(*) AS entries_month
       FROM entries
-      WHERE entry_date >= datetime('now', 'start of month')
-    `).get();
+      WHERE entry_date >= ?
+    `).get(startOfMonth);
 
     const collectionRow = db.prepare(`
       SELECT
         COALESCE(SUM(amount), 0) AS collected_month,
         COUNT(*) AS payments_month
       FROM payments
-      WHERE pay_date >= datetime('now', 'start of month')
-    `).get();
+      WHERE pay_date >= ?
+    `).get(startOfMonth);
 
     // All-time active outstanding dues
     const customers = db.prepare('SELECT customer_id FROM customers').all();
@@ -128,6 +140,7 @@ router.get('/stats', (req, res) => {
     }
 
     // Top 5 medicines by purchase frequency in the last 30 days
+    const minus30Days = getMinus30DaysISO();
     const topMedicines = db.prepare(`
       SELECT
         em.medicine_name,
@@ -135,11 +148,11 @@ router.get('/stats', (req, res) => {
         ROUND(AVG(em.price), 2) AS avg_price
       FROM entry_medicine em
       JOIN entries e ON em.entry_id = e.entry_id
-      WHERE e.entry_date >= datetime('now', '-30 days')
+      WHERE e.entry_date >= ?
       GROUP BY LOWER(em.medicine_name)
       ORDER BY frequency DESC
       LIMIT 5
-    `).all();
+    `).all(minus30Days);
 
     res.json({
       salesThisMonth: Math.round((salesRow?.sales_month || 0) * 100) / 100,
@@ -160,7 +173,7 @@ router.get('/stats', (req, res) => {
  * POST /api/reports/backup
  * Trigger manual database backup
  */
-router.post('/backup', (req, res) => {
+router.post('/backup', loopbackOnly, (req, res) => {
   try {
     const result = performBackup(true);
     res.json(result);
@@ -186,7 +199,7 @@ router.get('/backups', (req, res) => {
  * POST /api/reports/restore
  * Restore database from a backup file with overwrite confirmation
  */
-router.post('/restore', (req, res) => {
+router.post('/restore', loopbackOnly, (req, res) => {
   try {
     const { filename } = req.body;
     if (!filename) {
@@ -208,7 +221,7 @@ router.post('/restore', (req, res) => {
  * GET /api/reports/export/sqlite
  * Download current SQLite database file
  */
-router.get('/export/sqlite', (req, res) => {
+router.get('/export/sqlite', loopbackOnly, (req, res) => {
   try {
     if (!fs.existsSync(config.DB_PATH)) {
       return res.status(404).json({ error: 'Database file not found' });
@@ -225,7 +238,7 @@ router.get('/export/sqlite', (req, res) => {
  * GET /api/reports/export/csv
  * Download full ledger CSV export
  */
-router.get('/export/csv', (req, res) => {
+router.get('/export/csv', loopbackOnly, (req, res) => {
   try {
     const csvData = generateCsvExport();
     const filename = `medtrack_ledger_${new Date().toISOString().slice(0, 10)}.csv`;

@@ -19,19 +19,12 @@ router.post('/', (req, res) => {
       return res.status(400).json({ error: 'At least one medicine is required' });
     }
 
-    const total = parseFloat(total_amount !== undefined ? total_amount : totalAmount);
+    const totalVal = total_amount !== undefined ? total_amount : totalAmount;
+    const total = totalVal !== undefined && totalVal !== null && totalVal !== '' ? parseFloat(totalVal) : undefined;
     const paid = parseFloat(amount_paid !== undefined ? amount_paid : (amountPaid !== undefined ? amountPaid : 0));
-
-    if (isNaN(total) || total <= 0) {
-      return res.status(400).json({ error: 'Total amount must be greater than 0' });
-    }
 
     if (isNaN(paid) || paid < 0) {
       return res.status(400).json({ error: 'Amount paid cannot be negative' });
-    }
-
-    if (paid > total) {
-      return res.status(400).json({ error: 'Amount paid cannot exceed total purchase amount' });
     }
 
     const result = addEntry({
@@ -45,7 +38,12 @@ router.post('/', (req, res) => {
     res.status(201).json(result);
   } catch (err) {
     console.error('Create entry error:', err);
-    res.status(400).json({ error: err.message || 'Failed to record entry' });
+    res.status(400).json({ 
+      error: err.message || 'Failed to record entry',
+      code: err.code,
+      expected: err.expected,
+      errors: err.errors
+    });
   }
 });
 

@@ -30,7 +30,7 @@ router.get('/:id', (req, res) => {
     `).get(entryId);
 
     if (!entry) {
-      return res.status(404).send('Entry not found');
+      return res.status(404).json({ error: 'Entry not found' });
     }
 
     const medicines = db.prepare(`
