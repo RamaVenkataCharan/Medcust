@@ -4,13 +4,12 @@ import { api } from '../utils/api';
 import { useToast } from './Toast';
 import { formatCurrency } from '../utils/formatting';
 import Modal from './Modal';
+import { computeBill } from '../utils/discountEngine';
 
 export default function EntryForm({ isOpen, onClose, customer, onSuccess }) {
   const { addToast } = useToast();
 
-  const [medicines, setMedicines] = useState([{ name: '', price: '' }]);
-  const [totalAmountInput, setTotalAmountInput] = useState('');
-  const [isManualTotal, setIsManualTotal] = useState(false);
+  const [medicines, setMedicines] = useState([{ name: '', price: '', discount: '', discount_mode: 'amount' }]);
   const [amountPaid, setAmountPaid] = useState('');
   const [entryDate, setEntryDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -25,9 +24,7 @@ export default function EntryForm({ isOpen, onClose, customer, onSuccess }) {
   // Reset form when modal opens
   useEffect(() => {
     if (isOpen) {
-      setMedicines([{ name: '', price: '' }]);
-      setTotalAmountInput('');
-      setIsManualTotal(false);
+      setMedicines([{ name: '', price: '', discount: '', discount_mode: 'amount' }]);
       setAmountPaid('');
       setEntryDate(new Date().toISOString().slice(0, 10));
       setCompletedEntry(null);
@@ -64,7 +61,7 @@ export default function EntryForm({ isOpen, onClose, customer, onSuccess }) {
 
   // Medicine row addition/removal
   const addMedicineRow = () => {
-    setMedicines([...medicines, { name: '', price: '' }]);
+    setMedicines([...medicines, { name: '', price: '', discount: '', discount_mode: 'amount' }]);
   };
 
   const removeMedicineRow = (index) => {
@@ -80,19 +77,30 @@ export default function EntryForm({ isOpen, onClose, customer, onSuccess }) {
     setMedicines(updated);
   };
 
-  // Compute sum of medicine prices
-  const sumOfPrices = medicines.reduce((sum, item) => {
-    const p = parseFloat(item.price);
-    return sum + (isNaN(p) ? 0 : p);
-  }, 0);
+  const handleDiscountChange = (index, field, value) => {
+    const updated = [...medicines];
+    if (field === 'discount') {
+      updated[index][field] = value.replace(/[^\d.]/g, '');
+    } else {
+      updated[index][field] = value;
+    }
+    setMedicines(updated);
+  };
 
-  // Derived or manual total
-  const computedTotal = isManualTotal && totalAmountInput !== ''
-    ? parseFloat(totalAmountInput) || 0
-    : sumOfPrices;
+  const bill = computeBill({
+    lines: medicines.map(m => ({ 
+      name: m.name, 
+      price: parseFloat(m.price) || 0, 
+      discount: parseFloat(m.discount) || 0, 
+      mode: m.discount_mode 
+    })),
+    paidNow: parseFloat(amountPaid) || 0,
+    currentDue: 0,
+  });
 
+  const computedTotal = bill.rupees.grandTotal;
   const parsedPaid = amountPaid === '' ? computedTotal : parseFloat(amountPaid) || 0;
-  const liveDue = Math.max(0, Math.round((computedTotal - parsedPaid) * 100) / 100);
+  const liveDue = bill.rupees.dueCreated;
   const isOverpaid = parsedPaid > computedTotal;
 
   const handleSubmit = async (e) => {
@@ -104,13 +112,8 @@ export default function EntryForm({ isOpen, onClose, customer, onSuccess }) {
       return;
     }
 
-    if (computedTotal <= 0) {
-      addToast('Total amount must be greater than 0', 'warning');
-      return;
-    }
-
-    if (isOverpaid) {
-      addToast('Amount paid cannot exceed total amount', 'error');
+    if (!bill.ok) {
+      addToast(bill.errors.join(', ').replace(/_/g, ' '), 'warning');
       return;
     }
 
@@ -202,60 +205,85 @@ export default function EntryForm({ isOpen, onClose, customer, onSuccess }) {
           <div className="space-y-2">
             <div className="flex justify-between items-center text-[11px] font-bold text-slate-500 uppercase tracking-wider">
               <span>Medicine / Prescription Items *</span>
-              <span>Price (Optional)</span>
+              <span>Price & Discount</span>
             </div>
 
             <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
               {medicines.map((item, idx) => (
-                <div key={idx} className="relative flex items-center gap-2">
-                  <div className="flex-1 relative">
-                    <input
-                      type="text"
-                      required={idx === 0}
-                      value={item.name}
-                      onChange={(e) => handleMedicineNameChange(idx, e.target.value)}
-                      placeholder={`Medicine name (e.g. Paracetamol 650mg)`}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:bg-white"
-                    />
+                <div key={idx} className="relative flex flex-col gap-2 p-2 bg-slate-50 border border-slate-200 rounded-xl">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 relative">
+                      <input
+                        type="text"
+                        required={idx === 0}
+                        value={item.name}
+                        onChange={(e) => handleMedicineNameChange(idx, e.target.value)}
+                        placeholder={`Medicine name`}
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                      />
 
-                    {/* Autocomplete popup */}
-                    {activeSuggestionIndex === idx && suggestions.length > 0 && (
-                      <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-xl shadow-lg border border-slate-200 divide-y divide-slate-100 z-50 max-h-36 overflow-y-auto">
-                        {suggestions.map((s, sIdx) => (
-                          <div
-                            key={sIdx}
-                            onClick={() => selectSuggestion(idx, s)}
-                            className="px-3 py-2 text-xs text-slate-800 hover:bg-indigo-50 cursor-pointer font-medium"
-                          >
-                            {s}
-                          </div>
-                        ))}
-                      </div>
+                      {/* Autocomplete popup */}
+                      {activeSuggestionIndex === idx && suggestions.length > 0 && (
+                        <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-xl shadow-lg border border-slate-200 divide-y divide-slate-100 z-50 max-h-36 overflow-y-auto">
+                          {suggestions.map((s, sIdx) => (
+                            <div
+                              key={sIdx}
+                              onClick={() => selectSuggestion(idx, s)}
+                              className="px-3 py-2 text-xs text-slate-800 hover:bg-indigo-50 cursor-pointer font-medium"
+                            >
+                              {s}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="w-24 relative">
+                      <span className="absolute left-2.5 top-2 text-slate-400">₹</span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={item.price}
+                        onChange={(e) => handlePriceChange(idx, e.target.value)}
+                        placeholder="Price"
+                        className="w-full pl-6 pr-2 py-2 bg-white border border-slate-200 rounded-lg text-xs font-mono text-slate-900 text-right focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                      />
+                    </div>
+
+                    {medicines.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeMedicineRow(idx)}
+                        className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     )}
                   </div>
-
-                  <div className="w-24 relative">
-                    <span className="absolute left-2.5 top-2 text-slate-400">₹</span>
-                    <input
-                      type="number"
-                      step="any"
-                      min="0"
-                      value={item.price}
-                      onChange={(e) => handlePriceChange(idx, e.target.value)}
-                      placeholder="0.00"
-                      className="w-full pl-6 pr-2 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-900 text-right focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:bg-white"
-                    />
+                  
+                  <div className="flex justify-end gap-2 items-center pl-4">
+                     <span className="text-slate-400 text-[10px]">Discount:</span>
+                     <div className="flex rounded-lg border border-slate-200 bg-white overflow-hidden">
+                       <button
+                         type="button"
+                         className={`px-2 py-1 ${item.discount_mode === 'percent' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500'}`}
+                         onClick={() => handleDiscountChange(idx, 'discount_mode', 'percent')}
+                       >%</button>
+                       <button
+                         type="button"
+                         className={`px-2 py-1 border-l border-slate-200 ${item.discount_mode === 'amount' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500'}`}
+                         onClick={() => handleDiscountChange(idx, 'discount_mode', 'amount')}
+                       >₹</button>
+                     </div>
+                     <input
+                        type="text"
+                        inputMode="decimal"
+                        value={item.discount}
+                        onChange={(e) => handleDiscountChange(idx, 'discount', e.target.value)}
+                        placeholder="0"
+                        className="w-16 px-2 py-1 bg-white border border-slate-200 rounded-lg text-xs font-mono text-slate-900 text-right focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                      />
                   </div>
-
-                  {medicines.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => removeMedicineRow(idx)}
-                      className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
                 </div>
               ))}
             </div>
@@ -276,22 +304,13 @@ export default function EntryForm({ isOpen, onClose, customer, onSuccess }) {
             <div>
               <div className="flex justify-between items-center mb-1">
                 <label className="font-bold text-slate-700">Total Bill Amount (₹) *</label>
-                {sumOfPrices > 0 && !isManualTotal && (
-                  <span className="text-[10px] text-indigo-600 font-medium">(Auto-calculated)</span>
+                {bill.rupees.discountTotal > 0 && (
+                  <span className="text-[10px] text-emerald-600 font-medium">(Saved {formatCurrency(bill.rupees.discountTotal)})</span>
                 )}
               </div>
-              <input
-                type="text"
-                inputMode="decimal"
-                required
-                value={isManualTotal ? totalAmountInput : (sumOfPrices > 0 ? String(sumOfPrices) : totalAmountInput)}
-                onChange={(e) => {
-                  setIsManualTotal(true);
-                  setTotalAmountInput(e.target.value.replace(/[^\d.]/g, ''));
-                }}
-                placeholder="0.00"
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:bg-white"
-              />
+              <div className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-xl font-mono text-sm font-bold text-slate-500">
+                {formatCurrency(computedTotal)}
+              </div>
             </div>
 
             {/* Amount Paid Now */}
