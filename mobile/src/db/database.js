@@ -54,6 +54,24 @@ function initNativeDatabase() {
     CREATE INDEX IF NOT EXISTS idx_entries_customer ON entries(customer_id);
     CREATE INDEX IF NOT EXISTS idx_entry_meds_entry ON entry_medicines(entry_id);
   `);
+
+  // Idempotent migration: Add 'note' column to entries if it doesn't exist
+  try {
+    db.execSync("ALTER TABLE entries ADD COLUMN note TEXT;");
+  } catch (e) {
+    if (!e.message.includes("duplicate column name")) {
+      console.warn("Could not add 'note' column to entries:", e);
+    }
+  }
+
+  // Idempotent migration: Add 'discount' column to entry_medicines if it doesn't exist
+  try {
+    db.execSync("ALTER TABLE entry_medicines ADD COLUMN discount REAL DEFAULT 0;");
+  } catch (e) {
+    if (!e.message.includes("duplicate column name")) {
+      console.warn("Could not add 'discount' column to entry_medicines:", e);
+    }
+  }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -345,6 +363,7 @@ export function addPurchaseEntry({ customerId, medicines = [], totalAmount = 0, 
           entry_id: entryId,
           medicine_name: med.name.trim(),
           price: parseFloat(med.price) || 0,
+          discount: parseFloat(med.discount) || 0,
         });
       }
     }
@@ -368,10 +387,11 @@ export function addPurchaseEntry({ customerId, medicines = [], totalAmount = 0, 
     for (const med of medicines) {
       if (med.name && med.name.trim()) {
         const medPrice = parseFloat(med.price) || 0;
+        const medDiscount = parseFloat(med.discount) || 0;
         db.runSync(`
-          INSERT INTO entry_medicines (entry_id, medicine_name, price)
-          VALUES (?, ?, ?);
-        `, [insertedEntryId, med.name.trim(), medPrice]);
+          INSERT INTO entry_medicines (entry_id, medicine_name, price, discount)
+          VALUES (?, ?, ?, ?);
+        `, [insertedEntryId, med.name.trim(), medPrice, medDiscount]);
       }
     }
   });
@@ -379,7 +399,7 @@ export function addPurchaseEntry({ customerId, medicines = [], totalAmount = 0, 
   return insertedEntryId;
 }
 
-export function addDuePayment({ customerId, amountPaid }) {
+export function addDuePayment({ customerId, amountPaid, note = null }) {
   const numericId = parseInt(customerId, 10);
   const now = getCurrentLocalIso();
   const parsedPaid = parseFloat(amountPaid) || 0;
@@ -395,6 +415,7 @@ export function addDuePayment({ customerId, amountPaid }) {
       total_amount: 0,
       amount_paid: parsedPaid,
       due_amount: dueAmount,
+      note: note,
     });
     saveWebState(state);
     return entryId;
@@ -403,9 +424,9 @@ export function addDuePayment({ customerId, amountPaid }) {
   // Native expo-sqlite
   const db = getNativeDb();
   const res = db.runSync(`
-    INSERT INTO entries (customer_id, entry_date, total_amount, amount_paid, due_amount)
-    VALUES (?, ?, 0, ?, ?);
-  `, [numericId, now, parsedPaid, dueAmount]);
+    INSERT INTO entries (customer_id, entry_date, total_amount, amount_paid, due_amount, note)
+    VALUES (?, ?, 0, ?, ?, ?);
+  `, [numericId, now, parsedPaid, dueAmount, note]);
 
   return res.lastInsertRowId;
 }
