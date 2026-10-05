@@ -1,22 +1,194 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef, memo, useMemo } from 'react';
 import {
   View,
   Text,
   FlatList,
   TouchableOpacity,
-  StyleSheet,
-  SafeAreaView,
   ActivityIndicator,
-  Modal,
-  TextInput,
   Alert,
+  Platform,
+  UIManager,
+  LayoutAnimation,
+  StyleSheet
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, SPACING, RADIUS, FONTS } from '../constants/theme';
-import { getCustomerById, getCustomerLedger, addDuePayment } from '../db/database';
-import { formatLocalDateTime } from '../utils/dateUtils';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { COLORS } from '../constants/theme';
+import { getCustomerById, getCustomerLedger } from '../db/database';
+import { formatLocalDateTime, getDateLabel } from '../utils/dateUtils';
 import { isPaymentEntry } from '../utils/khataLogic';
+import { formatINR, formatPhone } from '../utils/formatUtils';
+import { useResponsive, TEXT_PROPS } from '../utils/responsive';
+import ScreenContainer from '../components/ScreenContainer';
+import StickyFooter from '../components/StickyFooter';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+function extractPaymentMethod(note) {
+  if (!note) return null;
+  const parts = note.split(' - ');
+  const mode = parts[0].trim();
+  if (['Cash', 'UPI', 'Bank'].includes(mode)) return mode;
+  
+  const lower = note.toLowerCase();
+  if (lower.includes('upi')) return 'UPI';
+  if (lower.includes('cash')) return 'Cash';
+  if (lower.includes('card')) return 'Card';
+  if (lower.includes('cheque') || lower.includes('check')) return 'Cheque';
+  if (lower.includes('neft') || lower.includes('rtgs') || lower.includes('imps') || lower.includes('bank')) return 'Bank';
+  return null;
+}
+
+const PurchaseRow = memo(function PurchaseRow({ item, isExpanded, onToggle, styles, r }) {
+  const medicines = item.medicines || [];
+  const total = parseFloat(item.total_amount || 0);
+  const paid = parseFloat(item.amount_paid || 0);
+  const due = parseFloat(item.due_amount || 0);
+  const isFullyPaid = due <= 0;
+
+  const dateLabel = getDateLabel(item.entry_date);
+  const dateTimestamp = formatLocalDateTime(item.entry_date);
+
+  return (
+    <View style={styles.card}>
+      <TouchableOpacity
+        style={styles.rowHeader}
+        onPress={onToggle}
+        activeOpacity={0.7}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      >
+        <View style={styles.purchaseCircle}>
+          <Ionicons name="bag-outline" size={r.scale(20)} color={COLORS.primary} />
+        </View>
+
+        <View style={styles.rowMiddle}>
+          <Text {...TEXT_PROPS} style={styles.rowDateLabel} numberOfLines={1}>{dateLabel}</Text>
+          <Text {...TEXT_PROPS} style={styles.rowTimestamp} numberOfLines={1}>{dateTimestamp}</Text>
+        </View>
+
+        <View style={styles.rowRight}>
+          <Text {...TEXT_PROPS} style={styles.rowTotalLabel}>Total</Text>
+          <Text {...TEXT_PROPS} style={styles.rowTotalAmount}>{formatINR(total)}</Text>
+        </View>
+        <Ionicons
+          name={isExpanded ? 'chevron-up' : 'chevron-down'}
+          size={r.scale(18)}
+          color={COLORS.textTertiary}
+          style={styles.chevron}
+        />
+      </TouchableOpacity>
+
+      {isExpanded && (
+        <View style={styles.expandedBox}>
+          {medicines.length > 0
+            ? medicines.map((med, idx) => {
+                const price = parseFloat(med.price || 0);
+                const discount = parseFloat(med.discount || 0);
+                const lineTotal = discount > 0 ? price - discount : price;
+                return (
+                  <View key={med.id || idx}>
+                    {idx > 0 && <View style={styles.medDivider} />}
+                    <View style={styles.medRow}>
+                      <View style={styles.medLeft}>
+                        <Text {...TEXT_PROPS} style={styles.medName} numberOfLines={2}>{med.medicine_name}</Text>
+                        <Text {...TEXT_PROPS} style={styles.medQty}>1 × {price.toFixed(0)}</Text>
+                        {discount > 0 && (
+                          <Text {...TEXT_PROPS} style={styles.medDiscount}>Discount −{formatINR(discount)}</Text>
+                        )}
+                      </View>
+                      <Text {...TEXT_PROPS} style={styles.medAmount}>{formatINR(lineTotal)}</Text>
+                    </View>
+                  </View>
+                );
+              })
+            : (
+              <Text {...TEXT_PROPS} style={styles.noMedsText}>General purchase</Text>
+            )
+          }
+
+          <View style={styles.paidRow}>
+            <Ionicons name="card-outline" size={r.scale(16)} color={COLORS.textSecondary} style={{ marginRight: r.scale(6) }} />
+            <View>
+              <Text {...TEXT_PROPS} style={styles.paidLabel}>Paid</Text>
+              <Text {...TEXT_PROPS} style={styles.paidAmount}>{formatINR(paid)}</Text>
+            </View>
+          </View>
+
+          {isFullyPaid ? (
+            <View style={styles.pillGreen}>
+              <Ionicons name="checkmark-circle-outline" size={r.scale(14)} color={COLORS.greenText} style={{ marginRight: r.scale(4) }} />
+              <Text {...TEXT_PROPS} style={styles.pillGreenText}>Fully paid</Text>
+            </View>
+          ) : (
+            <View style={styles.pillAmber}>
+              <Ionicons name="cash-outline" size={r.scale(14)} color={COLORS.amberBannerText} style={{ marginRight: r.scale(4) }} />
+              <Text {...TEXT_PROPS} style={styles.pillAmberText}>{formatINR(due)} added to due</Text>
+            </View>
+          )}
+        </View>
+      )}
+    </View>
+  );
+});
+
+const PaymentRow = memo(function PaymentRow({ item, isExpanded, onToggle, styles, r }) {
+  const paid = parseFloat(item.amount_paid || 0);
+  const dateLabel = getDateLabel(item.entry_date);
+  const dateTimestamp = formatLocalDateTime(item.entry_date);
+  const method = extractPaymentMethod(item.note);
+  const methodLine = method ? `Payment · ${method}` : 'Payment';
+
+  return (
+    <View style={styles.card}>
+      <TouchableOpacity
+        style={styles.rowHeader}
+        onPress={onToggle}
+        activeOpacity={0.7}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      >
+        <View style={styles.paymentCircle}>
+          <Text {...TEXT_PROPS} style={styles.rupeeText}>₹</Text>
+        </View>
+
+        <View style={styles.rowMiddle}>
+          <Text {...TEXT_PROPS} style={styles.rowDateLabel} numberOfLines={1}>{dateLabel}</Text>
+          <Text {...TEXT_PROPS} style={styles.rowTimestamp} numberOfLines={1}>{dateTimestamp}</Text>
+          <Text {...TEXT_PROPS} style={styles.rowMethodLine} numberOfLines={1}>{methodLine}</Text>
+        </View>
+
+        <Text {...TEXT_PROPS} style={styles.paymentAmount}>{formatINR(paid)}</Text>
+        <Ionicons
+          name={isExpanded ? 'chevron-up' : 'chevron-down'}
+          size={r.scale(18)}
+          color={COLORS.textTertiary}
+          style={styles.chevron}
+        />
+      </TouchableOpacity>
+
+      {(() => {
+        if (!isExpanded || !item.note) return null;
+        let displayNote = item.note;
+        if (method) {
+          const prefix = method + ' - ';
+          if (displayNote.startsWith(prefix)) {
+            displayNote = displayNote.substring(prefix.length).trim();
+          } else if (displayNote === method) {
+            displayNote = null;
+          }
+        }
+        if (!displayNote) return null;
+        return (
+          <View style={styles.expandedBox}>
+            <Text {...TEXT_PROPS} style={styles.noteText}>{displayNote}</Text>
+          </View>
+        );
+      })()}
+    </View>
+  );
+});
 
 export default function CustomerProfileScreen({ route, navigation }) {
   const { customerId } = route.params;
@@ -24,18 +196,31 @@ export default function CustomerProfileScreen({ route, navigation }) {
   const [customer, setCustomer] = useState(null);
   const [ledger, setLedger] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [expandedIds, setExpandedIds] = useState(new Set());
+  const [footerH, setFooterH] = useState(0);
+  const firstPurchaseIdRef = useRef(null);
 
-  // Payment modal state
-  const [payModalVisible, setPayModalVisible] = useState(false);
-  const [paymentAmount, setPaymentAmount] = useState('');
-  const [savingPayment, setSavingPayment] = useState(false);
+  const r = useResponsive();
+  const insets = useSafeAreaInsets();
+  const styles = useMemo(() => makeStyles(r, footerH), [r, footerH]);
 
   const loadProfile = useCallback(() => {
     try {
       const cust = getCustomerById(customerId);
+      if (!cust) {
+        navigation.goBack();
+        return;
+      }
       const entries = getCustomerLedger(customerId);
       setCustomer(cust);
       setLedger(entries);
+
+      const firstPurchase = entries.find((e) => !isPaymentEntry(e));
+      if (firstPurchase) {
+        const id = String(firstPurchase.entry_id);
+        firstPurchaseIdRef.current = id;
+        setExpandedIds(new Set([id]));
+      }
     } catch (err) {
       console.error('Error loading customer profile:', err);
     } finally {
@@ -45,487 +230,595 @@ export default function CustomerProfileScreen({ route, navigation }) {
 
   useFocusEffect(
     useCallback(() => {
+      setLoading(true);
       loadProfile();
     }, [loadProfile])
   );
 
-  const handleRecordPayment = () => {
-    const amount = parseFloat(paymentAmount);
-    if (!amount || amount <= 0) {
-      Alert.alert('Invalid Amount', 'Please enter a valid payment amount.');
+  const toggleExpand = useCallback((entryId) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(entryId)) {
+        next.delete(entryId);
+      } else {
+        next.add(entryId);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleDelete = useCallback(() => {
+    if (!customer) return;
+    const due = parseFloat(customer.total_due || 0);
+
+    if (due !== 0) {
+      const dueLine = due > 0
+          ? `This customer has ₹${due.toFixed(2)} in outstanding dues.`
+          : `This customer has a credit balance of ₹${Math.abs(due).toFixed(2)}.`;
+      Alert.alert('Cannot Delete', `${dueLine}\n\nSettle all dues/credit before deleting this customer.`, [{ text: 'OK' }]);
       return;
     }
 
-    setSavingPayment(true);
-    try {
-      addDuePayment({
-        customerId,
-        amountPaid: amount,
-      });
-      setPaymentAmount('');
-      setPayModalVisible(false);
-      loadProfile();
-    } catch (e) {
-      Alert.alert('Error', 'Could not record payment: ' + e.message);
-    } finally {
-      setSavingPayment(false);
-    }
-  };
+    Alert.alert(
+      'Move to Recycle Bin?',
+      `Move ${customer.name} to the Recycle Bin? You can restore them later.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert('Delete Not Yet Implemented', 'A soft-delete function has not been added to database.js yet.', [{ text: 'OK' }]);
+          },
+        },
+      ]
+    );
+  }, [customer]);
 
-  if (loading || !customer) {
+  if (loading) {
     return (
-      <SafeAreaView style={styles.centered}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-      </SafeAreaView>
+      <ScreenContainer>
+        <ActivityIndicator size="large" color={COLORS.primary} style={{ marginTop: r.scale(40) }} />
+      </ScreenContainer>
+    );
+  }
+
+  if (!customer) {
+    return (
+      <ScreenContainer>
+        <Text style={styles.notFoundText}>Customer not found.</Text>
+      </ScreenContainer>
     );
   }
 
   const totalDue = parseFloat(customer.total_due || 0);
   const hasDue = totalDue > 0;
+  const hasCredit = totalDue < 0;
 
   const renderLedgerItem = ({ item }) => {
-    const isPaymentOnly = isPaymentEntry(item);
+    const id = String(item.entry_id);
+    const expanded = expandedIds.has(id);
+    const toggle = () => toggleExpand(id);
 
-    // ── DISTINCT VISUAL TREATMENT FOR PAYMENTS (User Feedback #1) ──
-    if (isPaymentOnly) {
-      return (
-        <View style={styles.paymentCard}>
-          <View style={styles.entryHeaderRow}>
-            <View style={styles.paymentBadge}>
-              <Ionicons name="checkmark-circle" size={16} color={COLORS.paymentGreen} />
-              <Text style={styles.paymentBadgeText}>Payment Received</Text>
-            </View>
-            <Text style={styles.entryDateText}>{formatLocalDateTime(item.entry_date)}</Text>
-          </View>
-
-          <View style={styles.paymentBody}>
-            <Text style={styles.paymentAmountText}>
-              ₹{parseFloat(item.amount_paid).toFixed(2)}
-            </Text>
-            <Text style={styles.paymentSubtext}>Due balance reduced</Text>
-          </View>
-        </View>
-      );
+    if (isPaymentEntry(item)) {
+      return <PaymentRow item={item} isExpanded={expanded} onToggle={toggle} styles={styles} r={r} />;
     }
-
-    // ── STANDARD PURCHASE ENTRY ──
-    const medicines = item.medicines || [];
-    const entryDue = parseFloat(item.due_amount || 0);
-
-    return (
-      <View style={styles.purchaseCard}>
-        {/* Entry Date & Total */}
-        <View style={styles.entryHeaderRow}>
-          <Text style={styles.entryDateText}>{formatLocalDateTime(item.entry_date)}</Text>
-          <Text style={styles.purchaseTotalText}>
-            ₹{parseFloat(item.total_amount).toFixed(2)}
-          </Text>
-        </View>
-
-        {/* Medicine Tags */}
-        <View style={styles.medicineList}>
-          {medicines.map((med, idx) => (
-            <View key={idx} style={styles.medicineChip}>
-              <Text style={styles.medicineName}>{med.medicine_name}</Text>
-              {med.price > 0 ? (
-                <Text style={styles.medicinePrice}>₹{parseFloat(med.price).toFixed(0)}</Text>
-              ) : null}
-            </View>
-          ))}
-          {medicines.length === 0 && (
-            <Text style={styles.noMedsText}>General purchase</Text>
-          )}
-        </View>
-
-        {/* Entry Financial Footer */}
-        <View style={styles.entryFooterRow}>
-          <Text style={styles.paidText}>
-            Paid: ₹{parseFloat(item.amount_paid).toFixed(2)}
-          </Text>
-          {entryDue > 0 ? (
-            <Text style={styles.unpaidDueText}>+₹{entryDue.toFixed(2)} added to due</Text>
-          ) : (
-            <Text style={styles.fullyPaidText}>Fully paid</Text>
-          )}
-        </View>
-      </View>
-    );
+    return <PurchaseRow item={item} isExpanded={expanded} onToggle={toggle} styles={styles} r={r} />;
   };
 
-  return (
-    <SafeAreaView style={styles.container}>
-      {/* Top Header */}
-      <View style={styles.navBar}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={24} color={COLORS.textPrimary} />
-        </TouchableOpacity>
-        <Text style={styles.navTitle} numberOfLines={1}>
-          {customer.name}
-        </Text>
-      </View>
-
-      {/* Customer Header Index-Card */}
-      <View style={styles.customerHeaderCard}>
-        <View style={styles.profileTopRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.headerCustomerName}>{customer.name}</Text>
-            <Text style={styles.headerPhone}>
-              <Ionicons name="call-outline" size={13} color={COLORS.textSecondary} /> {customer.phone_number}
-            </Text>
-            {customer.village ? (
-              <Text style={styles.headerVillage}>
-                <Ionicons name="location-outline" size={13} color={COLORS.textSecondary} /> {customer.village}
-                {customer.address ? ` • ${customer.address}` : ''}
-              </Text>
-            ) : null}
-          </View>
-
-          {/* Quiet Due Badge */}
-          <View style={[styles.quietDueBadge, hasDue ? styles.quietDueAlert : styles.quietDueClear]}>
-            <Text style={[styles.quietDueText, hasDue ? styles.quietDueTextAlert : styles.quietDueTextClear]}>
-              {hasDue ? `₹${totalDue.toFixed(0)} due` : 'All clear'}
-            </Text>
-          </View>
+  const renderCustomerCard = () => (
+    <View style={styles.customerCard}>
+      <View style={styles.customerTopRow}>
+        <View style={styles.avatarCircle}>
+          <Ionicons name="person" size={r.scale(36)} color={COLORS.primary} />
         </View>
 
-        {/* Quick Payment Action (if due exists) */}
-        {hasDue && (
-          <TouchableOpacity
-            style={styles.recordPaymentRow}
-            onPress={() => {
-              setPaymentAmount(String(totalDue));
-              setPayModalVisible(true);
-            }}
-          >
-            <Ionicons name="card-outline" size={16} color={COLORS.paymentGreen} />
-            <Text style={styles.recordPaymentText}>Record Due Payment</Text>
-          </TouchableOpacity>
-        )}
+        <View style={styles.customerInfo}>
+          <Text {...TEXT_PROPS} style={styles.customerName} numberOfLines={2}>{customer.name}</Text>
+          <View style={styles.infoRow}>
+            <Ionicons name="call-outline" size={r.scale(13)} color={COLORS.textSecondary} />
+            <Text {...TEXT_PROPS} style={styles.infoText} numberOfLines={1}> {formatPhone(customer.phone_number)}</Text>
+          </View>
+          {customer.village ? (
+            <View style={styles.infoRow}>
+              <Ionicons name="location-outline" size={r.scale(13)} color={COLORS.textSecondary} />
+              <Text {...TEXT_PROPS} style={styles.infoText} numberOfLines={1}> {customer.village}</Text>
+            </View>
+          ) : null}
+        </View>
       </View>
 
-      {/* Ledger Section Header */}
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Purchase & Payment History</Text>
-        <Text style={styles.sectionSubtitle}>{ledger.length} record{ledger.length === 1 ? '' : 's'}</Text>
+      {hasDue ? (
+        <View style={styles.amberBanner}>
+          <Ionicons name="wallet-outline" size={r.scale(20)} color={COLORS.amberBannerText} style={{ marginRight: r.scale(8) }} />
+          <Text {...TEXT_PROPS} style={styles.amberBannerText}>{formatINR(totalDue)} due</Text>
+        </View>
+      ) : hasCredit ? (
+        <View style={styles.creditBanner}>
+          <Ionicons name="wallet-outline" size={r.scale(20)} color={COLORS.creditBannerText} style={{ marginRight: r.scale(8) }} />
+          <Text {...TEXT_PROPS} style={styles.creditBannerText}>{formatINR(Math.abs(totalDue))} credit</Text>
+        </View>
+      ) : (
+        <View style={styles.clearBanner}>
+          <Ionicons name="checkmark-circle-outline" size={r.scale(20)} color={COLORS.greenText} style={{ marginRight: r.scale(8) }} />
+          <Text {...TEXT_PROPS} style={styles.clearBannerText}>All clear, no dues</Text>
+        </View>
+      )}
+
+      {hasDue && (
+        <TouchableOpacity
+          style={styles.recordPaymentBtn}
+          activeOpacity={0.8}
+          onPress={() => navigation.navigate('RecordPayment', { customerId: customer.customer_id })}
+        >
+          <Ionicons name="card-outline" size={r.scale(18)} color={COLORS.primary} />
+          <Text {...TEXT_PROPS} style={styles.recordPaymentBtnText}>Record Due Payment</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+
+  const ListEmptyComponent = (
+    <View style={styles.emptyContainer}>
+      <Ionicons name="receipt-outline" size={r.scale(48)} color={COLORS.borderStrong} />
+      <Text {...TEXT_PROPS} style={styles.emptyTitle}>No purchases or payments yet</Text>
+      <Text {...TEXT_PROPS} style={styles.emptySubtitle}>Tap "+ Add Purchase" below to record the first transaction.</Text>
+    </View>
+  );
+
+  return (
+    <ScreenContainer>
+      <View style={styles.navBar}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => navigation.goBack()}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="arrow-back" size={r.scale(24)} color={COLORS.textPrimary} />
+        </TouchableOpacity>
+
+        <Text {...TEXT_PROPS} style={styles.navTitle} numberOfLines={1}>{customer.name}</Text>
+
+        <TouchableOpacity
+          style={styles.trashBtn}
+          onPress={handleDelete}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="trash-outline" size={r.scale(22)} color={COLORS.primary} />
+        </TouchableOpacity>
       </View>
 
-      {/* Ledger Entries List */}
-      {ledger.length === 0 ? (
-        <View style={styles.emptyLedgerContainer}>
-          <Ionicons name="reader-outline" size={44} color={COLORS.borderStrong} />
-          <Text style={styles.emptyLedgerTitle}>No purchases recorded yet</Text>
-          <Text style={styles.emptyLedgerSubtitle}>
-            Tap "+ Add Purchase" below to record medicines bought by this customer.
-          </Text>
+      {r.columns === 2 ? (
+        <View style={styles.twoPaneContainer}>
+          <View style={styles.leftPane}>
+            {renderCustomerCard()}
+          </View>
+          <View style={styles.rightPane}>
+            <View style={styles.sectionHeader}>
+              <Text {...TEXT_PROPS} style={styles.sectionTitle}>Purchase & Payment History</Text>
+              <Text {...TEXT_PROPS} style={styles.sectionCount}>{ledger.length} record{ledger.length === 1 ? '' : 's'}</Text>
+            </View>
+            <FlatList
+              data={ledger}
+              keyExtractor={(item) => String(item.entry_id)}
+              renderItem={renderLedgerItem}
+              ListEmptyComponent={ListEmptyComponent}
+              contentContainerStyle={styles.listContent}
+              showsVerticalScrollIndicator={false}
+            />
+          </View>
         </View>
       ) : (
         <FlatList
           data={ledger}
           keyExtractor={(item) => String(item.entry_id)}
           renderItem={renderLedgerItem}
-          contentContainerStyle={styles.ledgerListContent}
+          ListHeaderComponent={() => (
+            <View>
+              {renderCustomerCard()}
+              <View style={styles.sectionHeader}>
+                <Text {...TEXT_PROPS} style={styles.sectionTitle}>Purchase & Payment History</Text>
+                <Text {...TEXT_PROPS} style={styles.sectionCount}>{ledger.length} record{ledger.length === 1 ? '' : 's'}</Text>
+              </View>
+            </View>
+          )}
+          ListEmptyComponent={ListEmptyComponent}
+          contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
         />
       )}
 
-      {/* Bottom Floating Add Purchase Action */}
-      <View style={styles.bottomBar}>
+      <StickyFooter onHeight={setFooterH}>
         <TouchableOpacity
           style={styles.addPurchaseBtn}
           activeOpacity={0.85}
           onPress={() => navigation.navigate('AddPurchase', { customerId, customerName: customer.name })}
         >
-          <Ionicons name="cart-outline" size={22} color={COLORS.textInverted} />
-          <Text style={styles.addPurchaseBtnText}>+ Add Purchase</Text>
+          <Ionicons name="add" size={r.scale(22)} color={COLORS.textInverted} />
+          <Text {...TEXT_PROPS} style={styles.addPurchaseBtnText}>Add Purchase</Text>
         </TouchableOpacity>
-      </View>
-
-      {/* Record Payment Modal */}
-      <Modal visible={payModalVisible} transparent={true} animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Record Payment</Text>
-            <Text style={styles.modalSubtitle}>
-              Clearing due for {customer.name} (Current due: ₹{totalDue.toFixed(2)})
-            </Text>
-
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Amount received (₹)"
-              placeholderTextColor={COLORS.textTertiary}
-              value={paymentAmount}
-              onChangeText={setPaymentAmount}
-              keyboardType="numeric"
-              autoFocus={true}
-            />
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={styles.modalCancelBtn}
-                onPress={() => setPayModalVisible(false)}
-                disabled={savingPayment}
-              >
-                <Text style={styles.modalCancelBtnText}>Cancel</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.modalConfirmBtn}
-                onPress={handleRecordPayment}
-                disabled={savingPayment}
-              >
-                <Text style={styles.modalConfirmBtnText}>
-                  {savingPayment ? 'Saving...' : 'Confirm Payment'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-    </SafeAreaView>
+      </StickyFooter>
+    </ScreenContainer>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+const makeStyles = (r, footerH) => StyleSheet.create({
+  notFoundText: {
+    fontSize: r.font(15),
+    color: COLORS.textSecondary,
+    alignSelf: 'center',
+    marginTop: r.scale(40),
   },
   navBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.md,
+    paddingHorizontal: r.moderate(16),
+    paddingVertical: r.moderate(12),
+    backgroundColor: COLORS.background,
   },
   backBtn: {
-    padding: SPACING.xs,
-    marginRight: SPACING.sm,
+    minHeight: r.touch,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: r.moderate(4),
   },
   navTitle: {
-    ...FONTS.header,
+    fontSize: r.font(20),
+    fontWeight: '700',
+    color: COLORS.textPrimary,
     flex: 1,
+    letterSpacing: -0.3,
   },
-  customerHeaderCard: {
-    backgroundColor: COLORS.surface,
-    marginHorizontal: SPACING.xl,
-    padding: SPACING.lg,
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
+  trashBtn: {
+    minHeight: r.touch,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  twoPaneContainer: {
+    flex: 1,
+    flexDirection: 'row',
+  },
+  leftPane: {
+    flex: 1,
+    borderRightWidth: 1,
     borderColor: COLORS.border,
+    paddingRight: r.moderate(16),
+  },
+  rightPane: {
+    flex: 1.5,
+  },
+  customerCard: {
+    backgroundColor: COLORS.surface,
+    marginHorizontal: r.columns === 2 ? 0 : r.moderate(16),
+    marginLeft: r.moderate(16),
+    marginBottom: r.moderate(12),
+    padding: r.moderate(16),
+    borderRadius: r.moderate(18),
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 3,
-    elevation: 1,
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  profileTopRow: {
+  customerTopRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'flex-start',
+    marginBottom: r.moderate(12),
   },
-  headerCustomerName: {
-    ...FONTS.title,
-    fontSize: 20,
-    marginBottom: 4,
+  avatarCircle: {
+    width: r.scale(72),
+    height: r.scale(72),
+    borderRadius: r.scale(36),
+    backgroundColor: COLORS.avatarBg,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: r.moderate(12),
   },
-  headerPhone: {
-    ...FONTS.bodySecondary,
-    fontSize: 13,
-    marginBottom: 2,
+  customerInfo: {
+    flex: 1,
+    paddingTop: r.scale(4),
   },
-  headerVillage: {
-    ...FONTS.subtext,
-    color: COLORS.textSecondary,
-    marginTop: 2,
+  customerName: {
+    fontSize: r.font(22),
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    letterSpacing: -0.3,
+    marginBottom: r.scale(4),
   },
-  quietDueBadge: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: 4,
-    borderRadius: RADIUS.pill,
-    borderWidth: 1,
-  },
-  quietDueAlert: {
-    backgroundColor: COLORS.dueBadgeBg,
-    borderColor: COLORS.dueBadgeBorder,
-  },
-  quietDueClear: {
-    backgroundColor: COLORS.clearBadgeBg,
-    borderColor: COLORS.clearBadgeBorder,
-  },
-  quietDueText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  quietDueTextAlert: {
-    color: COLORS.dueBadgeText,
-  },
-  quietDueTextClear: {
-    color: COLORS.clearBadgeText,
-  },
-  recordPaymentRow: {
+  infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: SPACING.md,
-    paddingTop: SPACING.sm,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-    gap: 6,
+    marginBottom: r.scale(3),
   },
-  recordPaymentText: {
-    ...FONTS.subtext,
+  infoText: {
+    fontSize: r.font(14),
+    color: COLORS.textSecondary,
+    flex: 1,
+  },
+  amberBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.amberBannerBg,
+    borderRadius: r.moderate(10),
+    paddingHorizontal: r.moderate(16),
+    paddingVertical: r.moderate(12),
+    marginBottom: r.moderate(12),
+  },
+  amberBannerText: {
+    fontSize: r.font(18),
+    fontWeight: '700',
+    color: COLORS.amberBannerText,
+    letterSpacing: -0.2,
+  },
+  clearBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.greenCircleBg,
+    borderRadius: r.moderate(10),
+    paddingHorizontal: r.moderate(16),
+    paddingVertical: r.moderate(12),
+    marginBottom: r.moderate(12),
+  },
+  clearBannerText: {
+    fontSize: r.font(15),
     fontWeight: '600',
-    color: COLORS.paymentGreen,
+    color: COLORS.greenText,
+  },
+  creditBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.creditBannerBg,
+    borderRadius: r.moderate(10),
+    paddingHorizontal: r.moderate(16),
+    paddingVertical: r.moderate(12),
+    marginBottom: r.moderate(12),
+  },
+  creditBannerText: {
+    fontSize: r.font(15),
+    fontWeight: '600',
+    color: COLORS.creditBannerText,
+  },
+  recordPaymentBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: COLORS.primary,
+    borderRadius: r.moderate(10),
+    paddingVertical: r.moderate(12),
+    gap: r.scale(8),
+    minHeight: r.touch,
+  },
+  recordPaymentBtnText: {
+    fontSize: r.font(15),
+    fontWeight: '600',
+    color: COLORS.primary,
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: SPACING.xl,
-    marginTop: SPACING.xl,
-    marginBottom: SPACING.sm,
+    paddingHorizontal: r.moderate(16),
+    marginTop: r.moderate(8),
+    marginBottom: r.moderate(8),
   },
   sectionTitle: {
-    ...FONTS.bodySecondary,
-    fontWeight: '600',
+    fontSize: r.font(18),
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    letterSpacing: -0.2,
+  },
+  sectionCount: {
+    fontSize: r.font(12),
     color: COLORS.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    fontSize: 12,
   },
-  sectionSubtitle: {
-    ...FONTS.subtext,
+  listContent: {
+    paddingTop: r.moderate(12),
+    paddingBottom: footerH + 16,
   },
-  ledgerListContent: {
-    paddingHorizontal: SPACING.xl,
-    paddingBottom: 90,
-  },
-  purchaseCard: {
+  card: {
     backgroundColor: COLORS.surface,
-    padding: SPACING.lg,
-    borderRadius: RADIUS.md,
-    marginBottom: SPACING.md,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    marginHorizontal: r.moderate(16),
+    marginBottom: r.moderate(8),
+    borderRadius: r.moderate(14),
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
+    overflow: 'hidden',
   },
-  entryHeaderRow: {
+  rowHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: SPACING.sm,
+    paddingHorizontal: r.moderate(16),
+    paddingVertical: r.moderate(12),
+    minHeight: r.touch,
   },
-  entryDateText: {
-    ...FONTS.subtext,
+  rowMiddle: {
+    flex: 1,
+    marginLeft: r.moderate(12),
+  },
+  rowDateLabel: {
+    fontSize: r.font(15),
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+    marginBottom: r.scale(1),
+  },
+  rowTimestamp: {
+    fontSize: r.font(12),
+    color: COLORS.textSecondary,
+  },
+  rowMethodLine: {
+    fontSize: r.font(12),
+    color: COLORS.textSecondary,
+    marginTop: r.scale(1),
+  },
+  rowRight: {
+    alignItems: 'flex-end',
+    marginRight: r.moderate(4),
+  },
+  rowTotalLabel: {
+    fontSize: r.font(11),
     color: COLORS.textTertiary,
+    marginBottom: r.scale(1),
   },
-  purchaseTotalText: {
-    ...FONTS.header,
-    fontSize: 16,
-  },
-  medicineList: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginVertical: SPACING.xs,
-  },
-  medicineChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.surfaceSubtle,
-    paddingHorizontal: SPACING.sm + 2,
-    paddingVertical: 3,
-    borderRadius: RADIUS.sm,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    gap: 4,
-  },
-  medicineName: {
-    ...FONTS.subtext,
-    fontWeight: '500',
+  rowTotalAmount: {
+    fontSize: r.font(16),
+    fontWeight: '700',
     color: COLORS.textPrimary,
   },
-  medicinePrice: {
-    ...FONTS.subtext,
-    fontSize: 11,
-    color: COLORS.textSecondary,
+  paymentAmount: {
+    fontSize: r.font(16),
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    marginRight: r.moderate(4),
   },
-  noMedsText: {
-    ...FONTS.subtext,
-    fontStyle: 'italic',
+  chevron: {
+    marginLeft: r.moderate(4),
   },
-  entryFooterRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: SPACING.sm,
-    paddingTop: SPACING.xs,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.surfaceSubtle,
-  },
-  paidText: {
-    ...FONTS.subtext,
-    color: COLORS.textSecondary,
-  },
-  unpaidDueText: {
-    ...FONTS.subtext,
-    color: COLORS.dueBadgeText,
-    fontWeight: '600',
-  },
-  fullyPaidText: {
-    ...FONTS.subtext,
-    color: COLORS.paymentGreen,
-  },
-  paymentCard: {
-    backgroundColor: COLORS.paymentCardBg,
-    padding: SPACING.md,
-    borderRadius: RADIUS.md,
-    marginBottom: SPACING.md,
-    borderWidth: 1,
-    borderColor: COLORS.paymentCardBorder,
-  },
-  paymentBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  paymentBadgeText: {
-    ...FONTS.subtext,
-    fontWeight: '600',
-    color: COLORS.paymentGreen,
-  },
-  paymentBody: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'space-between',
-    marginTop: SPACING.xs,
-  },
-  paymentAmountText: {
-    ...FONTS.header,
-    color: COLORS.paymentGreen,
-    fontSize: 18,
-  },
-  paymentSubtext: {
-    ...FONTS.subtext,
-    color: COLORS.paymentGreen,
-  },
-  emptyLedgerContainer: {
-    flex: 1,
+  purchaseCircle: {
+    width: r.scale(44),
+    height: r.scale(44),
+    borderRadius: r.scale(22),
+    backgroundColor: COLORS.avatarBg,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: SPACING.xxxl,
   },
-  emptyLedgerTitle: {
-    ...FONTS.header,
-    marginTop: SPACING.md,
+  paymentCircle: {
+    width: r.scale(44),
+    height: r.scale(44),
+    borderRadius: r.scale(22),
+    backgroundColor: COLORS.greenCircleBg,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  rupeeText: {
+    fontSize: r.font(18),
+    fontWeight: '700',
+    color: COLORS.greenText,
+  },
+  expandedBox: {
+    marginHorizontal: r.moderate(16),
+    marginBottom: r.moderate(12),
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: r.moderate(10),
+    overflow: 'hidden',
+  },
+  medRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    paddingHorizontal: r.moderate(12),
+    paddingVertical: r.moderate(10),
+  },
+  medLeft: {
+    flex: 1,
+    marginRight: r.moderate(12),
+  },
+  medName: {
+    fontSize: r.font(14),
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+    marginBottom: r.scale(2),
+  },
+  medQty: {
+    fontSize: r.font(12),
+    color: COLORS.textSecondary,
+  },
+  medDiscount: {
+    fontSize: r.font(12),
+    color: COLORS.amberBannerText,
+    marginTop: r.scale(1),
+  },
+  medAmount: {
+    fontSize: r.font(14),
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+    alignSelf: 'center',
+  },
+  medDivider: {
+    height: 1,
+    backgroundColor: COLORS.border,
+    marginHorizontal: r.moderate(12),
+  },
+  paidRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: r.moderate(12),
+    paddingVertical: r.moderate(10),
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+  paidLabel: {
+    fontSize: r.font(12),
+    color: COLORS.textSecondary,
+    marginBottom: r.scale(1),
+  },
+  paidAmount: {
+    fontSize: r.font(15),
+    fontWeight: '700',
+    color: COLORS.greenText,
+  },
+  pillAmber: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.amberBannerBg,
+    borderRadius: r.moderate(999),
+    paddingHorizontal: r.moderate(12),
+    paddingVertical: r.moderate(6),
+    margin: r.moderate(12),
+    alignSelf: 'flex-start',
+  },
+  pillAmberText: {
+    fontSize: r.font(13),
+    fontWeight: '600',
+    color: COLORS.amberBannerText,
+  },
+  pillGreen: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.greenCircleBg,
+    borderRadius: r.moderate(999),
+    paddingHorizontal: r.moderate(12),
+    paddingVertical: r.moderate(6),
+    margin: r.moderate(12),
+    alignSelf: 'flex-start',
+  },
+  pillGreenText: {
+    fontSize: r.font(13),
+    fontWeight: '600',
+    color: COLORS.greenText,
+  },
+  noteText: {
+    fontSize: r.font(15),
+    color: COLORS.textSecondary,
+    padding: r.moderate(12),
+  },
+  noMedsText: {
+    fontSize: r.font(14),
+    fontStyle: 'italic',
+    padding: r.moderate(12),
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    paddingHorizontal: r.moderate(32),
+    paddingTop: r.moderate(32),
+  },
+  emptyTitle: {
+    fontSize: r.font(18),
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+    marginTop: r.moderate(12),
     textAlign: 'center',
   },
-  emptyLedgerSubtitle: {
-    ...FONTS.bodySecondary,
+  emptySubtitle: {
+    fontSize: r.font(14),
+    color: COLORS.textSecondary,
     textAlign: 'center',
-    marginTop: SPACING.xs,
+    marginTop: r.scale(4),
   },
   bottomBar: {
     position: 'absolute',
@@ -533,88 +826,27 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     backgroundColor: COLORS.background,
-    paddingHorizontal: SPACING.xl,
-    paddingVertical: SPACING.md,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
+    paddingHorizontal: r.moderate(16),
+    paddingTop: r.moderate(8),
+    paddingBottom: insets.bottom + r.moderate(16),
   },
   addPurchaseBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: COLORS.primary,
-    height: 52,
-    borderRadius: RADIUS.pill,
-    gap: SPACING.sm,
+    height: r.scale(56),
+    borderRadius: r.moderate(14),
+    gap: r.scale(8),
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.15,
-    shadowRadius: 5,
-    elevation: 3,
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
+    elevation: 4,
   },
   addPurchaseBtnText: {
-    ...FONTS.body,
+    fontSize: r.font(16),
     fontWeight: '700',
     color: COLORS.textInverted,
-    fontSize: 16,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: SPACING.xl,
-  },
-  modalCard: {
-    backgroundColor: COLORS.surface,
-    width: '100%',
-    padding: SPACING.xl,
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  modalTitle: {
-    ...FONTS.title,
-    fontSize: 18,
-  },
-  modalSubtitle: {
-    ...FONTS.bodySecondary,
-    fontSize: 13,
-    marginTop: 4,
-    marginBottom: SPACING.lg,
-  },
-  modalInput: {
-    backgroundColor: COLORS.surfaceSubtle,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: RADIUS.md,
-    paddingHorizontal: SPACING.md,
-    height: 52,
-    ...FONTS.header,
-    marginBottom: SPACING.xl,
-  },
-  modalActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: SPACING.md,
-  },
-  modalCancelBtn: {
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.lg,
-  },
-  modalCancelBtnText: {
-    ...FONTS.body,
-    color: COLORS.textSecondary,
-  },
-  modalConfirmBtn: {
-    backgroundColor: COLORS.paymentGreen,
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.xl,
-    borderRadius: RADIUS.pill,
-  },
-  modalConfirmBtnText: {
-    ...FONTS.body,
-    color: COLORS.textInverted,
-    fontWeight: '600',
   },
 });

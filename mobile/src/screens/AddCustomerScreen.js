@@ -1,20 +1,23 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
-  StyleSheet,
-  SafeAreaView,
   ScrollView,
   Alert,
   KeyboardAvoidingView,
   Platform,
+  StyleSheet
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, SPACING, RADIUS, FONTS } from '../constants/theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { COLORS } from '../constants/theme';
 import { addCustomer, getCustomerByPhone } from '../db/database';
 import { cleanPhoneNumber } from '../utils/khataLogic';
+import { useResponsive, TEXT_PROPS } from '../utils/responsive';
+import ScreenContainer from '../components/ScreenContainer';
+import StickyFooter from '../components/StickyFooter';
 
 export default function AddCustomerScreen({ navigation, route }) {
   const initialValue = route.params?.initialPhoneOrName || '';
@@ -25,6 +28,11 @@ export default function AddCustomerScreen({ navigation, route }) {
   const [village, setVillage] = useState('');
   const [address, setAddress] = useState('');
   const [saving, setSaving] = useState(false);
+  const [footerH, setFooterH] = useState(0);
+
+  const r = useResponsive();
+  const insets = useSafeAreaInsets();
+  const styles = useMemo(() => makeStyles(r, footerH), [r, footerH]);
 
   const handleSave = () => {
     const trimmedName = name.trim();
@@ -42,7 +50,6 @@ export default function AddCustomerScreen({ navigation, route }) {
 
     setSaving(true);
     try {
-      // 1. Check for existing customer by phone number
       const existing = getCustomerByPhone(cleanPhone);
       if (existing) {
         Alert.alert(
@@ -60,7 +67,6 @@ export default function AddCustomerScreen({ navigation, route }) {
         return;
       }
 
-      // 2. Add new customer
       const newId = addCustomer({
         name: trimmedName,
         phone_number: cleanPhone,
@@ -68,7 +74,6 @@ export default function AddCustomerScreen({ navigation, route }) {
         address: address.trim(),
       });
 
-      // 3. Immediately open newly created profile
       navigation.replace('CustomerProfile', { customerId: newId });
     } catch (err) {
       console.error('Error adding customer:', err);
@@ -79,7 +84,7 @@ export default function AddCustomerScreen({ navigation, route }) {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenContainer>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
@@ -87,15 +92,15 @@ export default function AddCustomerScreen({ navigation, route }) {
         <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
           <View style={styles.header}>
             <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-              <Ionicons name="arrow-back" size={24} color={COLORS.textPrimary} />
+              <Ionicons name="arrow-back" size={r.scale(24)} color={COLORS.textPrimary} />
             </TouchableOpacity>
-            <Text style={styles.title}>New Customer</Text>
+            <Text {...TEXT_PROPS} style={styles.title}>New Customer</Text>
           </View>
 
           {/* Form Card */}
           <View style={styles.formCard}>
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Customer Name *</Text>
+              <Text {...TEXT_PROPS} style={styles.label}>Customer Name *</Text>
               <TextInput
                 style={styles.input}
                 placeholder="e.g. Ramesh Kumar"
@@ -104,11 +109,12 @@ export default function AddCustomerScreen({ navigation, route }) {
                 onChangeText={setName}
                 autoFocus={!isNumericInitial}
                 autoCapitalize="words"
+                maxFontSizeMultiplier={1.3}
               />
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Phone Number (10 digits) *</Text>
+              <Text {...TEXT_PROPS} style={styles.label}>Phone Number (10 digits) *</Text>
               <TextInput
                 style={styles.input}
                 placeholder="e.g. 9876543210"
@@ -118,11 +124,12 @@ export default function AddCustomerScreen({ navigation, route }) {
                 keyboardType="phone-pad"
                 maxLength={10}
                 autoFocus={isNumericInitial}
+                maxFontSizeMultiplier={1.3}
               />
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Village / Locality (Optional)</Text>
+              <Text {...TEXT_PROPS} style={styles.label}>Village / Locality (Optional)</Text>
               <TextInput
                 style={styles.input}
                 placeholder="e.g. Nizampet"
@@ -130,11 +137,12 @@ export default function AddCustomerScreen({ navigation, route }) {
                 value={village}
                 onChangeText={setVillage}
                 autoCapitalize="words"
+                maxFontSizeMultiplier={1.3}
               />
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Address / Landmark (Optional)</Text>
+              <Text {...TEXT_PROPS} style={styles.label}>Address / Landmark (Optional)</Text>
               <TextInput
                 style={[styles.input, styles.textArea]}
                 placeholder="e.g. Near Ramalayam Temple"
@@ -143,50 +151,53 @@ export default function AddCustomerScreen({ navigation, route }) {
                 onChangeText={setAddress}
                 multiline={true}
                 numberOfLines={2}
+                maxFontSizeMultiplier={1.3}
               />
             </View>
           </View>
-
-          {/* Save Button */}
+        </ScrollView>
+        <StickyFooter onHeight={setFooterH}>
           <TouchableOpacity
             style={[styles.saveBtn, saving && styles.btnDisabled]}
             activeOpacity={0.85}
             onPress={handleSave}
             disabled={saving}
           >
-            <Ionicons name="checkmark-circle-outline" size={22} color={COLORS.textInverted} />
-            <Text style={styles.saveBtnText}>{saving ? 'Saving...' : 'Save & Open Profile'}</Text>
+            <Ionicons name="checkmark-circle-outline" size={r.scale(22)} color={COLORS.textInverted} />
+            <Text {...TEXT_PROPS} style={styles.saveBtnText}>{saving ? 'Saving...' : 'Save & Open Profile'}</Text>
           </TouchableOpacity>
-        </ScrollView>
+        </StickyFooter>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </ScreenContainer>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
+const makeStyles = (r, footerH) => StyleSheet.create({
   scrollContent: {
-    padding: SPACING.xl,
+    padding: r.moderate(20),
+    paddingBottom: footerH + 16,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: SPACING.xl,
+    marginBottom: r.moderate(20),
   },
   backBtn: {
-    marginRight: SPACING.md,
-    padding: SPACING.xs,
+    marginRight: r.moderate(12),
+    padding: r.moderate(4),
+    minHeight: r.touch,
+    justifyContent: 'center',
   },
   title: {
-    ...FONTS.title,
+    fontSize: r.font(22),
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    letterSpacing: -0.3,
   },
   formCard: {
     backgroundColor: COLORS.surface,
-    padding: SPACING.xl,
-    borderRadius: RADIUS.lg,
+    padding: r.moderate(20),
+    borderRadius: r.moderate(14),
     borderWidth: 1,
     borderColor: COLORS.border,
     shadowColor: '#000',
@@ -194,29 +205,30 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.03,
     shadowRadius: 3,
     elevation: 1,
-    marginBottom: SPACING.xl,
+    marginBottom: r.moderate(20),
   },
   inputGroup: {
-    marginBottom: SPACING.lg,
+    marginBottom: r.moderate(16),
   },
   label: {
-    ...FONTS.bodySecondary,
+    fontSize: r.font(14),
     fontWeight: '600',
     color: COLORS.textPrimary,
-    marginBottom: SPACING.xs + 2,
+    marginBottom: r.scale(6),
   },
   input: {
     backgroundColor: COLORS.surfaceSubtle,
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: RADIUS.md,
-    paddingHorizontal: SPACING.md,
-    height: 52,
-    ...FONTS.body,
+    borderRadius: r.moderate(10),
+    paddingHorizontal: r.moderate(12),
+    height: r.scale(52),
+    fontSize: r.font(15),
+    color: COLORS.textPrimary,
   },
   textArea: {
-    height: 70,
-    paddingTop: SPACING.md,
+    height: r.scale(70),
+    paddingTop: r.moderate(12),
     textAlignVertical: 'top',
   },
   saveBtn: {
@@ -224,22 +236,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: COLORS.primary,
-    height: 54,
-    borderRadius: RADIUS.pill,
-    gap: SPACING.sm,
+    height: r.scale(54),
+    borderRadius: r.moderate(999),
+    gap: r.scale(8),
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.15,
     shadowRadius: 5,
     elevation: 3,
+    minHeight: r.touch,
   },
   btnDisabled: {
     opacity: 0.6,
   },
   saveBtnText: {
-    ...FONTS.body,
+    fontSize: r.font(16),
     fontWeight: '700',
     color: COLORS.textInverted,
-    fontSize: 16,
   },
 });
