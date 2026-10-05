@@ -1,26 +1,32 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
   TextInput,
   FlatList,
   TouchableOpacity,
-  StyleSheet,
-  SafeAreaView,
   StatusBar,
   ActivityIndicator,
+  StyleSheet
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, SPACING, RADIUS, FONTS } from '../constants/theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { COLORS } from '../constants/theme';
 import { searchCustomers, getActiveDriverName } from '../db/database';
 import { exportKhataBackup } from '../services/exportService';
+import { useResponsive, TEXT_PROPS } from '../utils/responsive';
+import ScreenContainer from '../components/ScreenContainer';
 
 export default function HomeScreen({ navigation }) {
   const [query, setQuery] = useState('');
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+
+  const r = useResponsive();
+  const insets = useSafeAreaInsets();
+  const styles = useMemo(() => makeStyles(r, insets), [r, insets]);
 
   const loadData = useCallback(() => {
     try {
@@ -33,7 +39,6 @@ export default function HomeScreen({ navigation }) {
     }
   }, [query]);
 
-  // Reload when screen regains focus or query changes
   useFocusEffect(
     useCallback(() => {
       loadData();
@@ -61,21 +66,21 @@ export default function HomeScreen({ navigation }) {
         onPress={() => navigation.navigate('CustomerProfile', { customerId: item.customer_id })}
       >
         <View style={styles.cardHeader}>
-          <Text style={styles.customerName}>{item.name}</Text>
+          <Text {...TEXT_PROPS} style={styles.customerName} numberOfLines={1}>{item.name}</Text>
           <View style={[styles.dueBadge, hasDue ? styles.dueBadgeAlert : styles.dueBadgeClear]}>
-            <Text style={[styles.dueBadgeText, hasDue ? styles.dueBadgeTextAlert : styles.dueBadgeTextClear]}>
+            <Text {...TEXT_PROPS} style={[styles.dueBadgeText, hasDue ? styles.dueBadgeTextAlert : styles.dueBadgeTextClear]}>
               {hasDue ? `₹${totalDue.toFixed(0)} due` : 'All clear'}
             </Text>
           </View>
         </View>
 
         <View style={styles.cardDetails}>
-          <Text style={styles.detailText}>
-            <Ionicons name="call-outline" size={13} color={COLORS.textSecondary} /> {item.phone_number}
+          <Text {...TEXT_PROPS} style={styles.detailText} numberOfLines={1}>
+            <Ionicons name="call-outline" size={r.scale(13)} color={COLORS.textSecondary} /> {item.phone_number}
           </Text>
           {item.village ? (
-            <Text style={styles.detailText}>
-              <Ionicons name="location-outline" size={13} color={COLORS.textSecondary} /> {item.village}
+            <Text {...TEXT_PROPS} style={styles.detailText} numberOfLines={1}>
+              <Ionicons name="location-outline" size={r.scale(13)} color={COLORS.textSecondary} /> {item.village}
             </Text>
           ) : null}
         </View>
@@ -84,14 +89,14 @@ export default function HomeScreen({ navigation }) {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenContainer>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
 
       {/* Notebook Header */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.appTitle}>MedTrack</Text>
-          <Text style={styles.appSubtitle}>
+        <View style={{ flex: 1, marginRight: r.moderate(8) }}>
+          <Text {...TEXT_PROPS} style={styles.appTitle}>MedTrack</Text>
+          <Text {...TEXT_PROPS} style={styles.appSubtitle} numberOfLines={1}>
             Medical Khata Book • {getActiveDriverName().includes('SQLITE') ? 'Native SQLite' : 'Web Fallback'}
           </Text>
         </View>
@@ -106,8 +111,8 @@ export default function HomeScreen({ navigation }) {
             <ActivityIndicator size="small" color={COLORS.primary} />
           ) : (
             <>
-              <Ionicons name="share-outline" size={18} color={COLORS.primary} />
-              <Text style={styles.exportButtonText}>Backup</Text>
+              <Ionicons name="share-outline" size={r.scale(18)} color={COLORS.primary} />
+              <Text {...TEXT_PROPS} style={styles.exportButtonText}>Backup</Text>
             </>
           )}
         </TouchableOpacity>
@@ -115,7 +120,7 @@ export default function HomeScreen({ navigation }) {
 
       {/* Auto-focused Large Search Box */}
       <View style={styles.searchContainer}>
-        <Ionicons name="search" size={20} color={COLORS.textTertiary} style={styles.searchIcon} />
+        <Ionicons name="search" size={r.scale(20)} color={COLORS.textTertiary} style={styles.searchIcon} />
         <TextInput
           style={styles.searchInput}
           placeholder="Search by phone or name..."
@@ -126,10 +131,11 @@ export default function HomeScreen({ navigation }) {
           keyboardType="default"
           returnKeyType="search"
           clearButtonMode="while-editing"
+          maxFontSizeMultiplier={1.3}
         />
         {query.length > 0 && (
           <TouchableOpacity onPress={() => setQuery('')} style={styles.clearSearchBtn}>
-            <Ionicons name="close-circle" size={18} color={COLORS.textTertiary} />
+            <Ionicons name="close-circle" size={r.scale(18)} color={COLORS.textTertiary} />
           </TouchableOpacity>
         )}
       </View>
@@ -141,19 +147,19 @@ export default function HomeScreen({ navigation }) {
         </View>
       ) : customers.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Ionicons name="book-outline" size={48} color={COLORS.borderStrong} />
-          <Text style={styles.emptyTitle}>
+          <Ionicons name="book-outline" size={r.scale(48)} color={COLORS.borderStrong} />
+          <Text {...TEXT_PROPS} style={styles.emptyTitle}>
             {query.trim() ? `No customer matching "${query}"` : 'No customers yet'}
           </Text>
-          <Text style={styles.emptySubtitle}>
+          <Text {...TEXT_PROPS} style={styles.emptySubtitle}>
             Add this customer to start tracking medicines and purchases.
           </Text>
           <TouchableOpacity
             style={styles.addCustomerEmptyBtn}
             onPress={() => navigation.navigate('AddCustomer', { initialPhoneOrName: query.trim() })}
           >
-            <Ionicons name="person-add-outline" size={20} color={COLORS.textInverted} />
-            <Text style={styles.addCustomerEmptyBtnText}>+ Add Customer</Text>
+            <Ionicons name="person-add-outline" size={r.scale(20)} color={COLORS.textInverted} />
+            <Text {...TEXT_PROPS} style={styles.addCustomerEmptyBtnText}>+ Add Customer</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -173,49 +179,48 @@ export default function HomeScreen({ navigation }) {
           activeOpacity={0.85}
           onPress={() => navigation.navigate('AddCustomer', { initialPhoneOrName: query.trim() })}
         >
-          <Ionicons name="person-add" size={20} color={COLORS.textInverted} />
-          <Text style={styles.fabText}>+ Add Customer</Text>
+          <Ionicons name="person-add" size={r.scale(20)} color={COLORS.textInverted} />
+          <Text {...TEXT_PROPS} style={styles.fabText}>+ Add Customer</Text>
         </TouchableOpacity>
       )}
-    </SafeAreaView>
+    </ScreenContainer>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
+const makeStyles = (r, insets) => StyleSheet.create({
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: SPACING.xl,
-    paddingTop: SPACING.md,
-    paddingBottom: SPACING.sm,
+    paddingHorizontal: r.moderate(20),
+    paddingTop: r.moderate(12),
+    paddingBottom: r.moderate(8),
   },
   appTitle: {
-    ...FONTS.title,
+    fontSize: r.font(22),
+    fontWeight: '700',
     color: COLORS.primary,
+    letterSpacing: -0.3,
   },
   appSubtitle: {
-    ...FONTS.subtext,
+    fontSize: r.font(12),
     color: COLORS.textSecondary,
-    marginTop: 2,
+    marginTop: r.scale(2),
   },
   exportButton: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.primaryLight,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs + 3,
-    borderRadius: RADIUS.pill,
+    paddingHorizontal: r.moderate(12),
+    paddingVertical: r.moderate(7),
+    borderRadius: r.moderate(999),
     borderWidth: 1,
     borderColor: COLORS.primaryBorder,
-    gap: 4,
+    gap: r.scale(4),
+    minHeight: r.touch,
   },
   exportButtonText: {
-    ...FONTS.subtext,
+    fontSize: r.font(12),
     fontWeight: '600',
     color: COLORS.primary,
   },
@@ -223,11 +228,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.surface,
-    marginHorizontal: SPACING.xl,
-    marginVertical: SPACING.md,
-    paddingHorizontal: SPACING.md,
-    height: 52,
-    borderRadius: RADIUS.lg,
+    marginHorizontal: r.moderate(20),
+    marginVertical: r.moderate(12),
+    paddingHorizontal: r.moderate(12),
+    height: r.scale(52),
+    borderRadius: r.moderate(14),
     borderWidth: 1,
     borderColor: COLORS.border,
     shadowColor: '#000',
@@ -237,26 +242,29 @@ const styles = StyleSheet.create({
     elevation: 1,
   },
   searchIcon: {
-    marginRight: SPACING.sm,
+    marginRight: r.moderate(8),
   },
   searchInput: {
     flex: 1,
-    ...FONTS.body,
+    fontSize: r.font(15),
+    color: COLORS.textPrimary,
     height: '100%',
   },
   clearSearchBtn: {
-    padding: SPACING.xs,
+    padding: r.moderate(4),
+    minHeight: Math.max(r.touch, r.scale(44)),
+    justifyContent: 'center',
   },
   listContent: {
-    paddingHorizontal: SPACING.xl,
-    paddingBottom: 85,
-    paddingTop: SPACING.xs,
+    paddingHorizontal: r.moderate(20),
+    paddingBottom: insets.bottom + r.moderate(85), // fab padding
+    paddingTop: r.moderate(4),
   },
   customerCard: {
     backgroundColor: COLORS.surface,
-    padding: SPACING.lg,
-    borderRadius: RADIUS.md,
-    marginBottom: SPACING.md,
+    padding: r.moderate(16),
+    borderRadius: r.moderate(10),
+    marginBottom: r.moderate(12),
     borderWidth: 1,
     borderColor: COLORS.border,
     shadowColor: '#000',
@@ -269,17 +277,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: SPACING.sm,
+    marginBottom: r.moderate(8),
   },
   customerName: {
-    ...FONTS.header,
+    fontSize: r.font(18),
+    fontWeight: '600',
+    color: COLORS.textPrimary,
     flex: 1,
-    marginRight: SPACING.sm,
+    marginRight: r.moderate(8),
   },
   dueBadge: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: 3,
-    borderRadius: RADIUS.pill,
+    paddingHorizontal: r.moderate(12),
+    paddingVertical: r.scale(3),
+    borderRadius: r.moderate(999),
     borderWidth: 1,
   },
   dueBadgeAlert: {
@@ -291,7 +301,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.clearBadgeBorder,
   },
   dueBadgeText: {
-    fontSize: 12,
+    fontSize: r.font(12),
     fontWeight: '600',
   },
   dueBadgeTextAlert: {
@@ -302,11 +312,13 @@ const styles = StyleSheet.create({
   },
   cardDetails: {
     flexDirection: 'row',
-    gap: SPACING.lg,
+    gap: r.moderate(16),
   },
   detailText: {
-    ...FONTS.bodySecondary,
-    fontSize: 13,
+    fontSize: r.font(13),
+    color: COLORS.textSecondary,
+    lineHeight: r.font(20),
+    flex: 1,
   },
   centered: {
     flex: 1,
@@ -317,52 +329,58 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: SPACING.xxxl,
+    paddingHorizontal: r.moderate(32),
   },
   emptyTitle: {
-    ...FONTS.header,
-    marginTop: SPACING.md,
+    fontSize: r.font(18),
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+    marginTop: r.moderate(12),
     textAlign: 'center',
   },
   emptySubtitle: {
-    ...FONTS.bodySecondary,
+    fontSize: r.font(14),
+    color: COLORS.textSecondary,
+    lineHeight: r.font(20),
     textAlign: 'center',
-    marginTop: SPACING.xs,
-    marginBottom: SPACING.xl,
+    marginTop: r.scale(4),
+    marginBottom: r.moderate(20),
   },
   addCustomerEmptyBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.primary,
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.xl,
-    borderRadius: RADIUS.pill,
-    gap: SPACING.sm,
+    paddingVertical: r.moderate(12),
+    paddingHorizontal: r.moderate(20),
+    borderRadius: r.moderate(999),
+    gap: r.scale(8),
+    minHeight: r.touch,
   },
   addCustomerEmptyBtnText: {
-    ...FONTS.body,
+    fontSize: r.font(15),
     fontWeight: '600',
     color: COLORS.textInverted,
   },
   fab: {
     position: 'absolute',
-    bottom: SPACING.xxl,
-    right: SPACING.xl,
+    bottom: insets.bottom + 16,
+    right: insets.right + 16,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.primary,
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.xl,
-    borderRadius: RADIUS.pill,
-    gap: SPACING.sm,
+    paddingVertical: r.moderate(12),
+    paddingHorizontal: r.moderate(20),
+    borderRadius: r.moderate(999),
+    gap: r.scale(8),
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.18,
     shadowRadius: 6,
     elevation: 4,
+    minHeight: r.touch,
   },
   fabText: {
-    ...FONTS.body,
+    fontSize: r.font(15),
     fontWeight: '600',
     color: COLORS.textInverted,
   },
