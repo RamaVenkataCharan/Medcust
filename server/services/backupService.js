@@ -190,8 +190,10 @@ function generateCsvExport() {
         c.village,
         c.address,
         c.created_at,
-        ROUND(COALESCE((SELECT SUM(due_amount) FROM entries WHERE customer_id = c.customer_id), 0) -
-              COALESCE((SELECT SUM(amount) FROM payments WHERE customer_id = c.customer_id), 0), 2) AS current_due
+        (
+          COALESCE((SELECT SUM(CAST(ROUND(due_amount * 100) AS INTEGER)) FROM entries WHERE customer_id = c.customer_id), 0) -
+          COALESCE((SELECT SUM(CAST(ROUND(amount * 100) AS INTEGER)) FROM payments WHERE customer_id = c.customer_id), 0)
+        ) / 100.0 AS current_due
       FROM customers c
       ORDER BY c.customer_id ASC
     `).all();
