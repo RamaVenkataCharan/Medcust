@@ -72,6 +72,15 @@ function initNativeDatabase() {
       console.warn("Could not add 'discount' column to entry_medicines:", e);
     }
   }
+
+  // Idempotent migration: Add 'deleted_at' column to customers if it doesn't exist
+  try {
+    db.execSync("ALTER TABLE customers ADD COLUMN deleted_at TEXT DEFAULT NULL;");
+  } catch (e) {
+    if (!e.message.includes("duplicate column name")) {
+      console.warn("Could not add 'deleted_at' column to customers:", e);
+    }
+  }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -146,10 +155,11 @@ export function searchCustomers(query = '') {
     const filtered = trimmed
       ? results.filter(
           (c) =>
-            c.name.toLowerCase().includes(trimmed) ||
-            c.phone_number.includes(trimmed)
+            !c.deleted_at &&
+            (c.name.toLowerCase().includes(trimmed) ||
+             c.phone_number.includes(trimmed))
         )
-      : results;
+      : results.filter((c) => !c.deleted_at);
 
     return filtered.sort((a, b) => new Date(b.last_activity) - new Date(a.last_activity));
   }
@@ -171,6 +181,7 @@ export function searchCustomers(query = '') {
         MAX(e.entry_date) AS last_activity
       FROM customers c
       LEFT JOIN entries e ON c.customer_id = e.customer_id
+      WHERE c.deleted_at IS NULL
       GROUP BY c.customer_id
       ORDER BY COALESCE(MAX(e.entry_date), c.created_at) DESC
       LIMIT 100;
@@ -190,7 +201,7 @@ export function searchCustomers(query = '') {
       MAX(e.entry_date) AS last_activity
     FROM customers c
     LEFT JOIN entries e ON c.customer_id = e.customer_id
-    WHERE c.phone_number LIKE ? OR c.name LIKE ?
+    WHERE c.deleted_at IS NULL AND (c.phone_number LIKE ? OR c.name LIKE ?)
     GROUP BY c.customer_id
     ORDER BY c.name ASC
     LIMIT 50;
@@ -229,7 +240,7 @@ export function getCustomerById(customerId) {
       COUNT(e.entry_id) AS total_entries
     FROM customers c
     LEFT JOIN entries e ON c.customer_id = e.customer_id
-    WHERE c.customer_id = ?
+    WHERE c.customer_id = ? AND c.deleted_at IS NULL
     GROUP BY c.customer_id;
   `, [numericId]);
 }
@@ -517,8 +528,8 @@ export async function restoreDatabaseFromJson(data) {
     // 2. Insert customers
     for (const c of data.customers) {
       await db.runAsync(
-        `INSERT INTO customers (customer_id, phone_number, name, village, address, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-        [c.customer_id, c.phone_number, c.name, c.village || '', c.address || '', c.created_at || getCurrentLocalIso()]
+        `INSERT INTO customers (customer_id, phone_number, name, village, address, created_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [c.customer_id, c.phone_number, c.name, c.village || '', c.address || '', c.created_at || getCurrentLocalIso(), c.deleted_at || null]
       );
     }
 
@@ -550,5 +561,102 @@ export async function restoreDatabaseFromJson(data) {
     });
   });
 
+  return true;
+}
+
+// ─────────────────────────────────────────────────────────────
+// RECYCLE BIN OPERATIONS
+// ─────────────────────────────────────────────────────────────
+
+export function getDeletedCustomers() {
+  if (Platform.OS === 'web') {
+    const state = getWebState();
+    return state.customers.filter(c => c.deleted_at).map(c => {
+      const custEntries = state.entries.filter(e => e.customer_id === c.customer_id);
+      return {
+        ...c,
+        total_due: calculateCustomerTotalDue(custEntries)
+      };
+    });
+  }
+
+  const db = getNativeDb();
+  return db.getAllSync(`
+    SELECT c.*,
+           ROUND(COALESCE(SUM(e.due_amount), 0), 2) AS total_due
+    FROM customers c
+    LEFT JOIN entries e ON c.customer_id = e.customer_id
+    WHERE c.deleted_at IS NOT NULL
+    GROUP BY c.customer_id
+    ORDER BY c.deleted_at DESC;
+  `);
+}
+
+export function softDeleteCustomer(customerId) {
+  const numericId = parseInt(customerId, 10);
+  const now = getCurrentLocalIso();
+  
+  if (Platform.OS === 'web') {
+    const state = getWebState();
+    const cust = state.customers.find((c) => c.customer_id === numericId);
+    if (cust) {
+      cust.deleted_at = now;
+      saveWebState(state);
+      return true;
+    }
+    return false;
+  }
+  
+  const db = getNativeDb();
+  const res = db.runSync(`UPDATE customers SET deleted_at = ? WHERE customer_id = ?;`, [now, numericId]);
+  return res.changes > 0;
+}
+
+export function restoreDeletedCustomer(customerId) {
+  const numericId = parseInt(customerId, 10);
+  
+  if (Platform.OS === 'web') {
+    const state = getWebState();
+    const cust = state.customers.find((c) => c.customer_id === numericId);
+    if (cust) {
+      cust.deleted_at = null;
+      saveWebState(state);
+      return true;
+    }
+    return false;
+  }
+  
+  const db = getNativeDb();
+  const res = db.runSync(`UPDATE customers SET deleted_at = NULL WHERE customer_id = ?;`, [numericId]);
+  return res.changes > 0;
+}
+
+export async function permanentlyDeleteCustomer(customerId) {
+  const numericId = parseInt(customerId, 10);
+  
+  if (Platform.OS === 'web') {
+    const state = getWebState();
+    state.customers = state.customers.filter(c => c.customer_id !== numericId);
+    const entryIds = state.entries.filter(e => e.customer_id === numericId).map(e => e.entry_id);
+    state.entries = state.entries.filter(e => e.customer_id !== numericId);
+    state.entry_medicines = state.entry_medicines.filter(m => !entryIds.includes(m.entry_id));
+    saveWebState(state);
+    return true;
+  }
+
+  const db = getNativeDb();
+  await db.withExclusiveTransactionAsync(async () => {
+    // 1. Delete entry medicines
+    await db.runAsync(`
+      DELETE FROM entry_medicines 
+      WHERE entry_id IN (SELECT entry_id FROM entries WHERE customer_id = ?);
+    `, [numericId]);
+    
+    // 2. Delete entries
+    await db.runAsync(`DELETE FROM entries WHERE customer_id = ?;`, [numericId]);
+    
+    // 3. Delete customer
+    await db.runAsync(`DELETE FROM customers WHERE customer_id = ?;`, [numericId]);
+  });
   return true;
 }

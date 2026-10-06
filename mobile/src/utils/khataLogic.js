@@ -51,3 +51,11 @@ export function isPaymentEntry(entry) {
 
   return (total === 0 && paid > 0) || (hasNoMeds && paid > 0);
 }
+
+/**
+ * Validates if a customer can be deleted (only if due is 0).
+ */
+export function canDeleteCustomer(entries = []) {
+  const totalDue = calculateCustomerTotalDue(entries);
+  return totalDue === 0;
+}

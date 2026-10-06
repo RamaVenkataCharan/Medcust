@@ -141,6 +141,15 @@ export default function SettingsScreen({ navigation }) {
           {restoring ? <ActivityIndicator color="#fff" /> : <Ionicons name="download-outline" size={r(24)} color="#fff" />}
           <Text style={styles.actionButtonText}>{restoring ? 'Restoring...' : 'Restore from Backup'}</Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.actionButton, styles.secondaryButton]}
+          activeOpacity={0.8}
+          onPress={() => navigation.navigate('RecycleBin')}
+          disabled={exporting || restoring}
+        >
+          <Ionicons name="trash" size={r(24)} color={COLORS.textPrimary} />
+          <Text {...TEXT_PROPS} style={[styles.actionButtonText, { color: COLORS.textPrimary }]}>Recycle Bin</Text>
+        </TouchableOpacity>
       </View>
     </ScreenContainer>
   );
@@ -184,6 +193,11 @@ const makeStyles = (r, insets) => StyleSheet.create({
   },
   restoreButton: {
     backgroundColor: COLORS.danger,
+  },
+  secondaryButton: {
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
   actionButtonText: {
     color: '#fff',

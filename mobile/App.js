@@ -12,6 +12,7 @@ import CustomerProfileScreen from './src/screens/CustomerProfileScreen';
 import AddPurchaseScreen from './src/screens/AddPurchaseScreen';
 import RecordPaymentScreen from './src/screens/RecordPaymentScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
+import RecycleBinScreen from './src/screens/RecycleBinScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -52,6 +53,7 @@ export default function App() {
           <Stack.Screen name="AddPurchase" component={AddPurchaseScreen} />
           <Stack.Screen name="RecordPayment" component={RecordPaymentScreen} />
           <Stack.Screen name="Settings" component={SettingsScreen} />
+          <Stack.Screen name="RecycleBin" component={RecycleBinScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>

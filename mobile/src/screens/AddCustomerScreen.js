@@ -52,18 +52,37 @@ export default function AddCustomerScreen({ navigation, route }) {
     try {
       const existing = getCustomerByPhone(cleanPhone);
       if (existing) {
-        Alert.alert(
-          'Customer Already Exists',
-          `"${existing.name}" is already registered with this phone number. Opening profile...`,
-          [
-            {
-              text: 'Open Profile',
-              onPress: () => {
-                navigation.replace('CustomerProfile', { customerId: existing.customer_id });
+        if (existing.deleted_at) {
+          Alert.alert(
+            'Number in Recycle Bin',
+            `This number is in the Recycle Bin. Restore it instead?`,
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Restore',
+                onPress: () => {
+                  import('../db/database').then(({ restoreDeletedCustomer }) => {
+                    restoreDeletedCustomer(existing.customer_id);
+                    navigation.replace('CustomerProfile', { customerId: existing.customer_id });
+                  });
+                },
               },
-            },
-          ]
-        );
+            ]
+          );
+        } else {
+          Alert.alert(
+            'Customer Already Exists',
+            `"${existing.name}" is already registered with this phone number. Opening profile...`,
+            [
+              {
+                text: 'Open Profile',
+                onPress: () => {
+                  navigation.replace('CustomerProfile', { customerId: existing.customer_id });
+                },
+              },
+            ]
+          );
+        }
         return;
       }
 

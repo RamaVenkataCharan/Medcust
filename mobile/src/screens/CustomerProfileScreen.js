@@ -15,7 +15,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../constants/theme';
-import { getCustomerById, getCustomerLedger } from '../db/database';
+import { getCustomerById, getCustomerLedger, softDeleteCustomer } from '../db/database';
 import { formatLocalDateTime, getDateLabel } from '../utils/dateUtils';
 import { isPaymentEntry } from '../utils/khataLogic';
 import { formatINR, formatPhone } from '../utils/formatUtils';
@@ -269,7 +269,11 @@ export default function CustomerProfileScreen({ route, navigation }) {
           text: 'Delete',
           style: 'destructive',
           onPress: () => {
-            Alert.alert('Delete Not Yet Implemented', 'A soft-delete function has not been added to database.js yet.', [{ text: 'OK' }]);
+            if (softDeleteCustomer(customer.customer_id)) {
+              navigation.goBack();
+            } else {
+              Alert.alert('Error', 'Failed to delete customer.');
+            }
           },
         },
       ]
