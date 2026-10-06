@@ -124,6 +124,7 @@ function generateBillPdf(data, outputStream) {
   });
 
   const totalDiscount = medicines.reduce((sum, med) => sum + parseFloat(med.discount || 0), 0);
+  const subtotal = medicines.reduce((sum, med) => sum + parseFloat(med.price || 0), 0);
 
   doc.strokeColor('#e2e8f0').lineWidth(1).moveTo(30, currentY + 3).lineTo(doc.page.width - 30, currentY + 3).stroke();
   currentY += 8;
@@ -133,7 +134,6 @@ function generateBillPdf(data, outputStream) {
   const grandTotal = parseFloat(data.total_amount || data.totalAmount || 0);
 
   if (totalDiscount > 0) {
-    const subtotal = grandTotal + totalDiscount;
     doc
       .fontSize(8.5)
       .font('Helvetica')

@@ -1,7 +1,7 @@
 const config = require('../config');
 
-function getStartOfMonthISO(timeZone = config.TIMEZONE) {
-  const d = new Date();
+function getStartOfMonthISO(timeZone = config.TIMEZONE, referenceDate = new Date()) {
+  const d = new Date(referenceDate);
   const dLocal = new Date(d.toLocaleString('en-US', { timeZone }));
   const y = dLocal.getFullYear();
   const m = dLocal.getMonth();

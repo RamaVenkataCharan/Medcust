@@ -41,8 +41,8 @@ async function runTests() {
   const db = getDb();
   const custId = db.prepare(`INSERT INTO customers (phone_number, name, village, address) VALUES (?, ?, ?, ?)`).run('7777777777', 'Discount Test Cust', '', '').lastInsertRowid;
   
-  // Set initial due to 100 via an old entry
-  db.prepare(`INSERT INTO entries (customer_id, entry_date, total_amount, amount_paid, due_amount) VALUES (?, datetime('now'), 100, 0, 100)`).run(custId);
+  // Set initial due to 65 via an old entry
+  db.prepare(`INSERT INTO entries (customer_id, entry_date, total_amount, amount_paid, due_amount) VALUES (?, datetime('now'), 65, 0, 65)`).run(custId);
   
   console.log('\n━━━ 2. Worked Example through POST /api/entries ━━━');
   const app = require('express')();
@@ -55,11 +55,11 @@ async function runTests() {
   const payload = {
     customer_id: custId,
     medicines: [
-      { name: 'Med1', price: 100, discount: 10, discount_mode: 'amount' },
-      { name: 'Med2', price: 200, discount: 5, discount_mode: 'percent' } // 200 * 5% = 10
+      { name: 'Cifran', price: 75, discount: 10, discount_mode: 'percent' }, // 7.50 discount
+      { name: 'Dolo', price: 15, discount: 0, discount_mode: 'amount' } // 0 discount
     ],
-    amount_paid: 50,
-    total_amount: 280 // (100-10) + (200-10) = 280
+    amount_paid: 25,
+    total_amount: 82.50 // (75 - 7.50) + 15 = 82.50
   };
   
   const res = await fetch(`http://localhost:${config.PORT}/api/entries`, {
@@ -73,21 +73,28 @@ async function runTests() {
   assert(json.entryId > 0, 'Entry created successfully');
   
   const savedEntry = db.prepare('SELECT total_amount, amount_paid, due_amount FROM entries WHERE entry_id = ?').get(json.entryId);
-  assert(savedEntry.total_amount === 280, 'Total amount saved as 280');
-  assert(savedEntry.amount_paid === 50, 'Amount paid saved as 50');
-  assert(savedEntry.due_amount === 230, 'Due amount for this bill is 230'); // 280 - 50 = 230
+  assert(savedEntry.total_amount === 82.50, `Total amount saved as 82.50 (got ${savedEntry.total_amount})`);
+  assert(savedEntry.amount_paid === 25, `Amount paid saved as 25 (got ${savedEntry.amount_paid})`);
+  assert(savedEntry.due_amount === 57.50, `Due amount for this bill is 57.50 (got ${savedEntry.due_amount})`);
   
-  // Total due should now be 100 (old) + 230 (new) = 330
-  const totalDueRes = require('../db/database').getCustomerDue(custId) / 100;
-  assert(totalDueRes === 330, `Total combined customer due is exactly 330 (got ${totalDueRes})`);
+  // Total due should now be 65 (old) + 57.50 (new) = 122.50 rupees, which is 12250 paise
+  const totalDuePaise = require('../db/database').getCustomerDue(custId);
+  assert(totalDuePaise === 12250, `Total combined customer due is exactly 12250 paise (got ${totalDuePaise})`);
   
   // Fetch via GET /api/entries/:id to ensure discount is populated
   const getRes = await fetch(`http://localhost:${config.PORT}/api/entries/${json.entryId}`);
   const getJson = await getRes.json();
   
   assert(getJson.medicines.length === 2, 'Fetched 2 medicines');
-  assert(getJson.medicines[0].discount === 10, 'Medicine 1 has 10 discount saved');
-  assert(getJson.medicines[1].discount === 10, 'Medicine 2 has 10 (5% of 200) discount saved');
+  assert(getJson.medicines[0].discount === 7.50, `Medicine 1 (Cifran) has 7.50 discount saved (got ${getJson.medicines[0].discount})`);
+  assert(getJson.medicines[1].discount === 0, `Medicine 2 (Dolo) has 0 discount saved (got ${getJson.medicines[1].discount})`);
+
+  // Verify subtotal equals total_amount + discounts
+  const subtotalPaise = getJson.medicines.reduce((sum, med) => sum + med.price * 100, 0);
+  const totalDiscountPaise = getJson.medicines.reduce((sum, med) => sum + med.discount * 100, 0);
+  const grandTotalPaise = getJson.total_amount * 100;
+  
+  assert(subtotalPaise === grandTotalPaise + totalDiscountPaise, `Subtotal (${subtotalPaise/100}) equals total_amount (${grandTotalPaise/100}) + discounts (${totalDiscountPaise/100})`);
 
   server.close();
   closeDb();

@@ -86,11 +86,69 @@ async function runTests() {
   const json = await res.json();
   assert(json.total_due === 0.30, `API response total_due is in rupees: ${json.total_due}`);
   
-  // fetch search
   const resSearch = await fetch(`http://localhost:${config.PORT}/api/customers/search?q=8888`);
   const jsonSearch = await resSearch.json();
   assert(jsonSearch[0].total_due === 0.30, `API search total_due is in rupees: ${jsonSearch[0].total_due}`);
+
+  // Test entries POST totalDue is in rupees
+  const postEntryRes = await fetch(`http://localhost:${config.PORT}/api/entries`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      customer_id: custId,
+      medicines: [{ name: 'Test', price: 100 }],
+      amount_paid: 0,
+      total_amount: 100
+    })
+  });
+  const postEntryJson = await postEntryRes.json();
+  assert(postEntryJson.totalDue === 100.30, `API entries POST totalDue is in rupees: ${postEntryJson.totalDue}`);
+
+  app.use('/api/payments', require('../routes/payments'));
+  const postPaymentRes = await fetch(`http://localhost:${config.PORT}/api/payments`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      customer_id: custId,
+      amount: 50,
+      note: 'test payment'
+    })
+  });
+  const postPaymentJson = await postPaymentRes.json();
+  assert(postPaymentJson.previousDue === 100.30, `API payments POST previousDue is in rupees: ${postPaymentJson.previousDue}`);
+  assert(postPaymentJson.remainingDue === 50.30, `API payments POST remainingDue is in rupees: ${postPaymentJson.remainingDue}`);
   
+  // 5. Test Midnight IST month boundary
+  console.log('\n━━━ 5. Midnight IST Month Boundary ━━━');
+  const { getStartOfMonthISO } = require('../utils/dateUtils');
+  // IST is UTC+5:30. Midnight IST on Nov 1st is Oct 31st 18:30:00 UTC.
+  // We'll test Oct 31st 18:29:00 UTC (which is Oct 31st 23:59 IST) -> Should belong to October
+  // We'll test Oct 31st 18:31:00 UTC (which is Nov 1st 00:01 IST) -> Should belong to November
+  
+  const octLate = new Date('2026-10-31T18:29:00.000Z');
+  const startOct = getStartOfMonthISO('Asia/Kolkata', octLate);
+  assert(startOct === '2026-09-30T18:30:00.000Z', `Oct 31st 23:59 IST returns October start (${startOct})`);
+  
+  const novEarly = new Date('2026-10-31T18:31:00.000Z');
+  const startNov = getStartOfMonthISO('Asia/Kolkata', novEarly);
+  assert(startNov === '2026-10-31T18:30:00.000Z', `Nov 1st 00:01 IST returns November start (${startNov})`);
+
+  // Insert two entries for the *current* month boundary
+  // Current month is October 2026. Start of October IST is 2026-09-30T18:30:00.000Z.
+  const septLate = '2026-09-30T18:29:00.000Z'; // Sept 30th 23:59 IST
+  const octEarly = '2026-09-30T18:31:00.000Z'; // Oct 1st 00:01 IST
+
+  db.prepare(`INSERT INTO entries (customer_id, entry_date, total_amount, amount_paid, due_amount) VALUES (?, ?, ?, ?, ?)`).run(custId, septLate, 1000, 0, 1000);
+  db.prepare(`INSERT INTO entries (customer_id, entry_date, total_amount, amount_paid, due_amount) VALUES (?, ?, ?, ?, ?)`).run(custId, octEarly, 500, 0, 500);
+
+  app.use('/api/reports', require('../routes/reports'));
+  const statsRes = await fetch(`http://localhost:${config.PORT}/api/reports/stats`);
+  const statsJson = await statsRes.json();
+  
+  // Only the October entry (500) should be included in the monthly stats (since totalAmount of the previous POST was 100, we add 500 = 600 total this month)
+  // Wait, the previous POST was: total_amount: 100. So 100 + 500 = 600.
+  assert(statsJson.salesThisMonth === 600, `Monthly sales ignores 23:59 entry and includes 00:01 entry (Expected 600, got ${statsJson.salesThisMonth})`);
+
   server.close();
   closeDb();
 
