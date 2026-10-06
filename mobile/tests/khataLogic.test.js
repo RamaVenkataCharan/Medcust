@@ -4,7 +4,8 @@ const {
   cleanPhoneNumber, 
   calculateEntryDue, 
   calculatePaymentDue, 
-  isPaymentEntry 
+  isPaymentEntry,
+  filterCustomersForSearch
 } = require('../src/utils/khataLogic');
 
 describe('canDeleteCustomer', () => {
@@ -65,5 +66,34 @@ describe('isPaymentEntry', () => {
     expect(isPaymentEntry({ total_amount: 0, amount_paid: 50, medicines: [] })).toBe(true);
     expect(isPaymentEntry({ total_amount: 100, amount_paid: 50, medicines: [{}] })).toBe(false);
     expect(isPaymentEntry(null)).toBe(false);
+  });
+});
+
+describe('filterCustomersForSearch', () => {
+  const customers = [
+    { customer_id: 1, name: 'Alice', phone_number: '9876543210' },
+    { customer_id: 2, name: 'Bob', phone_number: '1234567890', deleted_at: '2026-10-06' },
+    { customer_id: 3, name: 'Charlie', phone_number: '9999999999' }
+  ];
+
+  it('returns all non-deleted if query is empty', () => {
+    const result = filterCustomersForSearch(customers, '');
+    expect(result.length).toBe(2);
+    expect(result.find(c => c.name === 'Bob')).toBeUndefined();
+  });
+
+  it('filters by name case-insensitive and ignores deleted', () => {
+    const result = filterCustomersForSearch(customers, 'ali');
+    expect(result.length).toBe(1);
+    expect(result[0].name).toBe('Alice');
+    
+    const resultBob = filterCustomersForSearch(customers, 'bob');
+    expect(resultBob.length).toBe(0); // Bob is deleted
+  });
+
+  it('filters by phone number', () => {
+    const result = filterCustomersForSearch(customers, '9999');
+    expect(result.length).toBe(1);
+    expect(result[0].name).toBe('Charlie');
   });
 });

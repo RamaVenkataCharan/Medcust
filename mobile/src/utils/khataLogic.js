@@ -59,3 +59,19 @@ export function canDeleteCustomer(entries = []) {
   const totalDue = calculateCustomerTotalDue(entries);
   return totalDue === 0;
 }
+
+/**
+ * Pure function to filter customers for web fallback search.
+ */
+export function filterCustomersForSearch(customers, query = '') {
+  const trimmed = String(query).trim().toLowerCase();
+  if (!trimmed) {
+    return customers.filter((c) => !c.deleted_at);
+  }
+  return customers.filter(
+    (c) =>
+      !c.deleted_at &&
+      (String(c.name).toLowerCase().includes(trimmed) ||
+       String(c.phone_number).includes(trimmed))
+  );
+}
