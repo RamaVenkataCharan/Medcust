@@ -36,7 +36,7 @@ export default function RecycleBinScreen({ navigation }) {
   const handleDeleteForever = (customer) => {
     Alert.prompt(
       'Permanent Delete',
-      `Type DELETE to permanently remove ${customer.name} and all their records. This cannot be undone.`,
+      `Type DELETE to permanently remove ${customer.name} and their ${customer.total_entries || 0} records. This cannot be undone.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {

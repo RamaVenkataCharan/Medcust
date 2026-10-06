@@ -30,8 +30,11 @@ export default function HomeScreen({ navigation }) {
 
   const reqCounter = useRef(0);
   const timerRef = useRef(null);
+  const queryRef = useRef(query);
+  queryRef.current = query;
 
   const loadData = useCallback((skipDebounce = false) => {
+    const q = queryRef.current;
     const currentReq = ++reqCounter.current;
     
     if (timerRef.current) {
@@ -40,9 +43,9 @@ export default function HomeScreen({ navigation }) {
     }
 
     // Fire immediately if query is cleared or skipDebounce is true
-    if (query === '' || skipDebounce) {
+    if (q === '' || skipDebounce) {
       try {
-        const results = searchCustomers(query);
+        const results = searchCustomers(q);
         if (reqCounter.current === currentReq) {
           setCustomers(results);
           setLoading(false);
@@ -58,7 +61,7 @@ export default function HomeScreen({ navigation }) {
     
     timerRef.current = setTimeout(() => {
       try {
-        const results = searchCustomers(query);
+        const results = searchCustomers(q);
         if (reqCounter.current === currentReq) {
           setCustomers(results);
           setLoading(false);
@@ -68,17 +71,16 @@ export default function HomeScreen({ navigation }) {
         if (reqCounter.current === currentReq) setLoading(false);
       }
     }, 250);
-  }, [query]);
+  }, []);
 
   // 1. Triggered exclusively by query changing (typing)
-  // We use query as the ONLY dependency to prevent double fetching.
   useEffect(() => {
     loadData(false);
     return () => {
       reqCounter.current++;
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [query]);
+  }, [query, loadData]);
 
   // 2. Triggered on focus
   useFocusEffect(
@@ -88,7 +90,7 @@ export default function HomeScreen({ navigation }) {
         reqCounter.current++;
         if (timerRef.current) clearTimeout(timerRef.current);
       };
-    }, []) // Empty dependency array means it ONLY runs on screen focus/unfocus, not when query changes.
+    }, [loadData]) 
   );
 
   const renderCustomerItem = ({ item }) => {

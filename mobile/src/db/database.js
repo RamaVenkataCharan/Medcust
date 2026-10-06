@@ -575,7 +575,8 @@ export function getDeletedCustomers() {
       const custEntries = state.entries.filter(e => e.customer_id === c.customer_id);
       return {
         ...c,
-        total_due: calculateCustomerTotalDue(custEntries)
+        total_due: calculateCustomerTotalDue(custEntries),
+        total_entries: custEntries.length
       };
     });
   }
@@ -583,7 +584,8 @@ export function getDeletedCustomers() {
   const db = getNativeDb();
   return db.getAllSync(`
     SELECT c.*,
-           ROUND(COALESCE(SUM(e.due_amount), 0), 2) AS total_due
+           ROUND(COALESCE(SUM(e.due_amount), 0), 2) AS total_due,
+           COUNT(e.entry_id) AS total_entries
     FROM customers c
     LEFT JOIN entries e ON c.customer_id = e.customer_id
     WHERE c.deleted_at IS NOT NULL
