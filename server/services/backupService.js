@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
 const config = require('../config');
+const { getCustomerDue } = require('../db/database');
 
 function ensureDir(dirPath) {
   if (!fs.existsSync(dirPath)) {
@@ -189,11 +190,7 @@ function generateCsvExport() {
         c.name,
         c.village,
         c.address,
-        c.created_at,
-        (
-          COALESCE((SELECT SUM(CAST(ROUND(due_amount * 100) AS INTEGER)) FROM entries WHERE customer_id = c.customer_id), 0) -
-          COALESCE((SELECT SUM(CAST(ROUND(amount * 100) AS INTEGER)) FROM payments WHERE customer_id = c.customer_id), 0)
-        ) / 100.0 AS current_due
+        c.created_at
       FROM customers c
       ORDER BY c.customer_id ASC
     `).all();
@@ -201,7 +198,8 @@ function generateCsvExport() {
     let csv = '=== CUSTOMERS & DUES LEDGER ===\r\n';
     csv += 'Customer ID,Phone Number,Name,Village,Address,Created Date,Current Due (INR)\r\n';
     for (const c of customers) {
-      csv += `${c.customer_id},"${c.phone_number}","${(c.name || '').replace(/"/g, '""')}","${(c.village || '').replace(/"/g, '""')}","${(c.address || '').replace(/"/g, '""')}",${c.created_at},${c.current_due}\r\n`;
+      const current_due = getCustomerDue(c.customer_id) / 100;
+      csv += `${c.customer_id},"${c.phone_number}","${(c.name || '').replace(/"/g, '""')}","${(c.village || '').replace(/"/g, '""')}","${(c.address || '').replace(/"/g, '""')}",${c.created_at},${current_due}\r\n`;
     }
 
     // 2. Entries with Medicines

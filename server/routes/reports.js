@@ -252,3 +252,4 @@ router.get('/export/csv', loopbackOnly, (req, res) => {
 });
 
 module.exports = router;
+module.exports.loopbackOnly = loopbackOnly;

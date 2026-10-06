@@ -82,7 +82,7 @@ async function runCoreTests() {
     assert(partial.length === 1, 'Partial phone number search matches debtor');
 
     // Initial due for new customer with no transactions
-    const initialDue = getCustomerDue(found.customer_id);
+    const initialDue = getCustomerDue(found.customer_id) / 100;
     assert(initialDue === 0, 'New customer starts with exactly 0.00 due');
   }
 
@@ -125,7 +125,7 @@ async function runCoreTests() {
     });
 
     assert(entry2.dueAmount === 300, 'Second entry due amount is ₹300');
-    const totalDueNow = getCustomerDue(custId);
+    const totalDueNow = getCustomerDue(custId) / 100;
     assert(totalDueNow === 600, 'Cumulative customer due is ₹600 (300 + 300)');
   }
 
@@ -147,7 +147,7 @@ async function runCoreTests() {
     assert(payment.remainingDue === 200, 'Remaining due correctly reduced to ₹200 (600 - 400)');
 
     // Verify database query reflects the same derived balance
-    const liveDue = getCustomerDue(custId);
+    const liveDue = getCustomerDue(custId) / 100;
     assert(liveDue === 200, 'Live customer due strictly derives as ₹200');
 
     // Clear remaining ₹200 due
@@ -158,7 +158,7 @@ async function runCoreTests() {
     });
 
     assert(paymentFinal.remainingDue === 0, 'Customer due clears completely to ₹0 ("All Clear")');
-    assert(getCustomerDue(custId) === 0, 'Derived due is zero');
+    assert(getCustomerDue(custId) / 100 === 0, 'Derived due is zero');
   }
 
   // ── 4. Autocomplete Suggestions ──
@@ -228,6 +228,72 @@ async function runCoreTests() {
       threwOnEmptyMeds = true;
     }
     assert(threwOnEmptyMeds, 'Rejects purchase entry with no medicine line items');
+    
+    // Attempt TOTAL_MISMATCH
+    let threwOnMismatch = false;
+    try {
+      // Intentionally passing totalAmount that doesn't match the medicines sum
+      addEntry({ customerId: custId, totalAmount: 999, amountPaid: 100, medicines: [{ name: 'Test', price: 100 }] });
+    } catch(e) {
+      if (e.code === 'TOTAL_MISMATCH') threwOnMismatch = true;
+    }
+    assert(threwOnMismatch, 'Rejects purchase entry when total amount mismatches derived bill (TOTAL_MISMATCH)');
+  }
+  
+  // ── 6.5. Discount Engine & Core Functions ──
+  section('6.5. Core Function Unit Tests');
+  {
+    const { computeBill } = require('../services/discountEngine');
+    
+    // Test discount engine
+    const bill = computeBill({
+      lines: [
+        { name: 'Med1', price: 100, discount: 10, mode: 'amount' },
+        { name: 'Med2', price: 200, discount: 5, mode: 'percent' },
+      ],
+      paidNow: 50,
+      currentDue: 100
+    });
+    
+    assert(bill.rupees.grandTotal === 280, 'computeBill calculates correct total with discounts'); // 90 + 190 = 280
+    assert(bill.rupees.updatedBalance === 330, 'computeBill calculates correct final due'); // 100 + 280 - 50 = 330
+    
+    // Test loopback 403
+    const { loopbackOnly } = require('../routes/reports');
+    let statusCalled = null;
+    let jsonCalled = null;
+    let nextCalled = false;
+    
+    const mockReqLocal = { ip: '::1', headers: {} };
+    const mockRes = {
+      status: (code) => { statusCalled = code; return { json: (data) => { jsonCalled = data; } }; }
+    };
+    const mockNext = () => { nextCalled = true; };
+    
+    loopbackOnly(mockReqLocal, mockRes, mockNext);
+    assert(nextCalled === true, 'loopbackOnly allows localhost');
+    
+    nextCalled = false;
+    const mockReqRemote = { ip: '192.168.1.100', headers: {} };
+    loopbackOnly(mockReqRemote, mockRes, mockNext);
+    assert(statusCalled === 403, 'loopbackOnly blocks remote IP with 403');
+    
+    // Test idempotent migration
+    const { runMigrations } = require('../db/migrations');
+    let threwOnDoubleMigration = false;
+    try {
+      runMigrations(db); // second time
+    } catch(e) {
+      threwOnDoubleMigration = true;
+    }
+    assert(!threwOnDoubleMigration, 'Timestamp migration can run twice safely (idempotent)');
+    
+    // Test route order
+    const customersRouter = require('../routes/customers');
+    const searchRouteIndex = customersRouter.stack.findIndex(r => r.route && r.route.path === '/search');
+    const idRouteIndex = customersRouter.stack.findIndex(r => r.route && r.route.path === '/:id');
+    assert(searchRouteIndex !== -1 && idRouteIndex !== -1, 'Both /search and /:id routes exist');
+    assert(searchRouteIndex < idRouteIndex, '/search is registered before /:id to prevent parameter swallowing');
   }
 
   // ── 7. Data Safety: Backup Integrity, Restore & Export ──
