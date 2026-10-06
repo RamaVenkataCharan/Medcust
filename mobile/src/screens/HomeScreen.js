@@ -31,11 +31,16 @@ export default function HomeScreen({ navigation }) {
   const reqCounter = useRef(0);
   const timerRef = useRef(null);
 
-  const loadData = useCallback(() => {
+  const loadData = useCallback((skipDebounce = false) => {
     const currentReq = ++reqCounter.current;
     
-    // Fire immediately if query is cleared
-    if (query === '') {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+
+    // Fire immediately if query is cleared or skipDebounce is true
+    if (query === '' || skipDebounce) {
       try {
         const results = searchCustomers(query);
         if (reqCounter.current === currentReq) {
@@ -50,7 +55,6 @@ export default function HomeScreen({ navigation }) {
     }
 
     setLoading(true);
-    if (timerRef.current) clearTimeout(timerRef.current);
     
     timerRef.current = setTimeout(() => {
       try {
@@ -66,21 +70,26 @@ export default function HomeScreen({ navigation }) {
     }, 250);
   }, [query]);
 
-  useFocusEffect(
-    useCallback(() => {
-      loadData();
-      return () => {
-        if (timerRef.current) clearTimeout(timerRef.current);
-      };
-    }, [loadData])
-  );
-
+  // 1. Triggered exclusively by query changing (typing)
+  // We use query as the ONLY dependency to prevent double fetching.
   useEffect(() => {
-    loadData();
+    loadData(false);
     return () => {
+      reqCounter.current++;
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [query, loadData]);
+  }, [query]);
+
+  // 2. Triggered on focus
+  useFocusEffect(
+    useCallback(() => {
+      loadData(true);
+      return () => {
+        reqCounter.current++;
+        if (timerRef.current) clearTimeout(timerRef.current);
+      };
+    }, []) // Empty dependency array means it ONLY runs on screen focus/unfocus, not when query changes.
+  );
 
   const renderCustomerItem = ({ item }) => {
     const totalDue = parseFloat(item.total_due || 0);
