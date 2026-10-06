@@ -28,7 +28,7 @@ function seedKhataDatabase() {
     // 1. Insert Customers
     const insertCustomer = db.prepare(`
       INSERT INTO customers (phone_number, name, village, address, created_at, updated_at)
-      VALUES (?, ?, ?, ?, datetime('now', ?), datetime('now', ?))
+      VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now', ?), strftime('%Y-%m-%dT%H:%M:%fZ', 'now', ?))
     `);
 
     const customers = [
@@ -51,7 +51,7 @@ function seedKhataDatabase() {
     // 2. Insert Entries & Medicines
     const insertEntry = db.prepare(`
       INSERT INTO entries (customer_id, entry_date, total_amount, amount_paid, due_amount)
-      VALUES (?, datetime('now', ?), ?, ?, ?)
+      VALUES (?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now', ?), ?, ?, ?)
     `);
 
     const insertMed = db.prepare(`
@@ -119,7 +119,7 @@ function seedKhataDatabase() {
     // 3. Insert Payments
     const insertPayment = db.prepare(`
       INSERT INTO payments (customer_id, pay_date, amount, note)
-      VALUES (?, datetime('now', ?), ?, ?)
+      VALUES (?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now', ?), ?, ?)
     `);
 
     // Venkatesh Goud paid 400 towards his 820 due

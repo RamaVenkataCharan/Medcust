@@ -5,11 +5,11 @@ function runMigrations(db) {
   const tables = ['entries', 'payments', 'customers'];
   let hasOldDates = false;
   
-  // A quick check if any old format dates exist
-  if (db.prepare(`SELECT 1 FROM entries WHERE entry_date NOT LIKE '%T%' AND entry_date LIKE '% %' LIMIT 1`).get() ||
-      db.prepare(`SELECT 1 FROM payments WHERE pay_date NOT LIKE '%T%' AND pay_date LIKE '% %' LIMIT 1`).get() ||
-      db.prepare(`SELECT 1 FROM customers WHERE created_at NOT LIKE '%T%' AND created_at LIKE '% %' LIMIT 1`).get() ||
-      db.prepare(`SELECT 1 FROM customers WHERE updated_at NOT LIKE '%T%' AND updated_at LIKE '% %' LIMIT 1`).get()) {
+  // A strict check if any 'YYYY-MM-DD HH:MM:SS' format dates exist
+  if (db.prepare(`SELECT 1 FROM entries WHERE entry_date LIKE '____-__-__ __:__:__' LIMIT 1`).get() ||
+      db.prepare(`SELECT 1 FROM payments WHERE pay_date LIKE '____-__-__ __:__:__' LIMIT 1`).get() ||
+      db.prepare(`SELECT 1 FROM customers WHERE created_at LIKE '____-__-__ __:__:__' LIMIT 1`).get() ||
+      db.prepare(`SELECT 1 FROM customers WHERE updated_at LIKE '____-__-__ __:__:__' LIMIT 1`).get()) {
     hasOldDates = true;
   }
   
@@ -22,10 +22,10 @@ function runMigrations(db) {
     if (hasOldDates) {
       console.log('[Migration] Converting timestamps to ISO 8601 UTC...');
       db.transaction(() => {
-        db.prepare(`UPDATE entries SET entry_date = REPLACE(entry_date, ' ', 'T') || 'Z' WHERE entry_date NOT LIKE '%T%' AND entry_date LIKE '% %'`).run();
-        db.prepare(`UPDATE payments SET pay_date = REPLACE(pay_date, ' ', 'T') || 'Z' WHERE pay_date NOT LIKE '%T%' AND pay_date LIKE '% %'`).run();
-        db.prepare(`UPDATE customers SET created_at = REPLACE(created_at, ' ', 'T') || 'Z' WHERE created_at NOT LIKE '%T%' AND created_at LIKE '% %'`).run();
-        db.prepare(`UPDATE customers SET updated_at = REPLACE(updated_at, ' ', 'T') || 'Z' WHERE updated_at NOT LIKE '%T%' AND updated_at LIKE '% %'`).run();
+        db.prepare(`UPDATE entries SET entry_date = REPLACE(entry_date, ' ', 'T') || 'Z' WHERE entry_date LIKE '____-__-__ __:__:__'`).run();
+        db.prepare(`UPDATE payments SET pay_date = REPLACE(pay_date, ' ', 'T') || 'Z' WHERE pay_date LIKE '____-__-__ __:__:__'`).run();
+        db.prepare(`UPDATE customers SET created_at = REPLACE(created_at, ' ', 'T') || 'Z' WHERE created_at LIKE '____-__-__ __:__:__'`).run();
+        db.prepare(`UPDATE customers SET updated_at = REPLACE(updated_at, ' ', 'T') || 'Z' WHERE updated_at LIKE '____-__-__ __:__:__'`).run();
       })();
     }
 
