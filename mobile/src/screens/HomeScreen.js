@@ -49,12 +49,6 @@ export default function HomeScreen({ navigation }) {
     loadData();
   }, [query, loadData]);
 
-  const handleExport = async () => {
-    setExporting(true);
-    await exportKhataBackup();
-    setExporting(false);
-  };
-
   const renderCustomerItem = ({ item }) => {
     const totalDue = parseFloat(item.total_due || 0);
     const hasDue = totalDue > 0;
@@ -103,18 +97,10 @@ export default function HomeScreen({ navigation }) {
 
         <TouchableOpacity
           style={styles.exportButton}
-          onPress={handleExport}
-          disabled={exporting}
-          accessibilityLabel="Export Backup"
+          onPress={() => navigation.navigate('Settings')}
+          accessibilityLabel="Settings"
         >
-          {exporting ? (
-            <ActivityIndicator size="small" color={COLORS.primary} />
-          ) : (
-            <>
-              <Ionicons name="share-outline" size={r.scale(18)} color={COLORS.primary} />
-              <Text {...TEXT_PROPS} style={styles.exportButtonText}>Backup</Text>
-            </>
-          )}
+          <Ionicons name="settings-outline" size={r.scale(20)} color={COLORS.primary} />
         </TouchableOpacity>
       </View>
 

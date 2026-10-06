@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -11,6 +11,7 @@ import AddCustomerScreen from './src/screens/AddCustomerScreen';
 import CustomerProfileScreen from './src/screens/CustomerProfileScreen';
 import AddPurchaseScreen from './src/screens/AddPurchaseScreen';
 import RecordPaymentScreen from './src/screens/RecordPaymentScreen';
+import SettingsScreen from './src/screens/SettingsScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -50,6 +51,7 @@ export default function App() {
           <Stack.Screen name="CustomerProfile" component={CustomerProfileScreen} />
           <Stack.Screen name="AddPurchase" component={AddPurchaseScreen} />
           <Stack.Screen name="RecordPayment" component={RecordPaymentScreen} />
+          <Stack.Screen name="Settings" component={SettingsScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>

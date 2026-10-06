@@ -1,4 +1,4 @@
-import { validateBackupJson, verifyImport } from '../src/utils/importValidator';
+const { validateBackupJson, verifyImport } = require('../src/utils/importValidator');
 
 describe('importValidator', () => {
   const validBackup = {

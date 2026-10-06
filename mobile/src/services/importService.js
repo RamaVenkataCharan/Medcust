@@ -1,5 +1,5 @@
 import { Platform } from 'react-native';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { exportAllData } from '../db/database';
 import { validateBackupJson } from '../utils/importValidator';
 import { getCurrentLocalIso } from '../utils/dateUtils';
@@ -41,5 +41,10 @@ export async function performAtomicRestore(jsonData) {
 
   // 2. Perform restore via database.js
   const { restoreDatabaseFromJson } = require('../db/database');
-  await restoreDatabaseFromJson(jsonData);
+  try {
+    await restoreDatabaseFromJson(jsonData);
+  } catch (err) {
+    err.snapshotUri = snapshotUri;
+    throw err;
+  }
 }

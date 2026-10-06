@@ -1,4 +1,4 @@
-export function validateBackupJson(fileString) {
+function validateBackupJson(fileString) {
   if (!fileString || typeof fileString !== 'string') {
     throw new Error("Invalid file content.");
   }
@@ -90,7 +90,7 @@ export function validateBackupJson(fileString) {
   return true;
 }
 
-export function verifyImport(expected, actual) {
+function verifyImport(expected, actual) {
   // 1. Verify row counts
   if (expected.customers.length !== actual.customers.length) {
     throw new Error(`Customer count mismatch: expected ${expected.customers.length}, got ${actual.customers.length}`);
@@ -127,3 +127,5 @@ export function verifyImport(expected, actual) {
 
   return true;
 }
+
+module.exports = { validateBackupJson, verifyImport };
