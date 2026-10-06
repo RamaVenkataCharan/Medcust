@@ -62,8 +62,8 @@ export default function SettingsScreen({ navigation }) {
       setRestoring(true);
       const fileUri = result.assets[0].uri;
       
-      // Check file size (rough check for safety, e.g., > 100MB reject)
-      if (result.assets[0].size > 100 * 1024 * 1024) {
+      // Check file size (rough check for safety, e.g., > 20MB reject)
+      if (result.assets[0].size > 20 * 1024 * 1024) {
         throw new Error("File is too large.");
       }
 
@@ -83,7 +83,7 @@ export default function SettingsScreen({ navigation }) {
 
       Alert.alert(
         'Warning: Destructive Restore',
-        `Current: ${currentCustCount} customers, ${currentEntryCount} entries.\nBackup: ${newCustCount} customers, ${newEntryCount} entries.\n\nAll current local data will be replaced. Proceed?`,
+        `Current: ${currentCustCount} customers, ${currentEntryCount} records.\nBackup: ${newCustCount} customers, ${newEntryCount} records.\n\nAll current local data will be replaced. Proceed?`,
         [
           { text: 'Cancel', style: 'cancel', onPress: () => setRestoring(false) },
           {

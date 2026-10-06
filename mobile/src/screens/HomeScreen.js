@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -28,25 +28,58 @@ export default function HomeScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => makeStyles(r, insets), [r, insets]);
 
+  const reqCounter = useRef(0);
+  const timerRef = useRef(null);
+
   const loadData = useCallback(() => {
-    try {
-      const results = searchCustomers(query);
-      setCustomers(results);
-    } catch (e) {
-      console.error('Error loading customers:', e);
-    } finally {
-      setLoading(false);
+    const currentReq = ++reqCounter.current;
+    
+    // Fire immediately if query is cleared
+    if (query === '') {
+      try {
+        const results = searchCustomers(query);
+        if (reqCounter.current === currentReq) {
+          setCustomers(results);
+          setLoading(false);
+        }
+      } catch (e) {
+        console.error('Error loading customers:', e);
+        if (reqCounter.current === currentReq) setLoading(false);
+      }
+      return;
     }
+
+    setLoading(true);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    
+    timerRef.current = setTimeout(() => {
+      try {
+        const results = searchCustomers(query);
+        if (reqCounter.current === currentReq) {
+          setCustomers(results);
+          setLoading(false);
+        }
+      } catch (e) {
+        console.error('Error loading customers:', e);
+        if (reqCounter.current === currentReq) setLoading(false);
+      }
+    }, 250);
   }, [query]);
 
   useFocusEffect(
     useCallback(() => {
       loadData();
+      return () => {
+        if (timerRef.current) clearTimeout(timerRef.current);
+      };
     }, [loadData])
   );
 
   useEffect(() => {
     loadData();
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
   }, [query, loadData]);
 
   const renderCustomerItem = ({ item }) => {
