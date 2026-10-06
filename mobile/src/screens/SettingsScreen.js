@@ -126,20 +126,20 @@ export default function SettingsScreen({ navigation }) {
     <ScreenContainer>
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={r(24)} color={COLORS.textPrimary} />
+          <Ionicons name="arrow-back" size={r.scale(24)} color={COLORS.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Settings</Text>
+        <Text {...TEXT_PROPS} style={styles.headerTitle}>Settings</Text>
       </View>
 
-      <View style={styles.content}>
+      <ScrollView contentContainerStyle={styles.content}>
         <TouchableOpacity style={styles.actionButton} onPress={handleExport} disabled={exporting || restoring}>
-          {exporting ? <ActivityIndicator color="#fff" /> : <Ionicons name="share-outline" size={r(24)} color="#fff" />}
-          <Text style={styles.actionButtonText}>{exporting ? 'Exporting...' : 'Share Backup'}</Text>
+          {exporting ? <ActivityIndicator color="#fff" /> : <Ionicons name="share-outline" size={r.scale(24)} color="#fff" />}
+          <Text {...TEXT_PROPS} style={styles.actionButtonText}>{exporting ? 'Exporting...' : 'Share Backup'}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={[styles.actionButton, styles.restoreButton]} onPress={handleRestore} disabled={exporting || restoring}>
-          {restoring ? <ActivityIndicator color="#fff" /> : <Ionicons name="download-outline" size={r(24)} color="#fff" />}
-          <Text style={styles.actionButtonText}>{restoring ? 'Restoring...' : 'Restore from Backup'}</Text>
+          {restoring ? <ActivityIndicator color="#fff" /> : <Ionicons name="download-outline" size={r.scale(24)} color="#fff" />}
+          <Text {...TEXT_PROPS} style={styles.actionButtonText}>{restoring ? 'Restoring...' : 'Restore from Backup'}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.actionButton, styles.secondaryButton]}
@@ -147,10 +147,10 @@ export default function SettingsScreen({ navigation }) {
           onPress={() => navigation.navigate('RecycleBin')}
           disabled={exporting || restoring}
         >
-          <Ionicons name="trash" size={r(24)} color={COLORS.textPrimary} />
+          <Ionicons name="trash" size={r.scale(24)} color={COLORS.textPrimary} />
           <Text {...TEXT_PROPS} style={[styles.actionButtonText, { color: COLORS.textPrimary }]}>Recycle Bin</Text>
         </TouchableOpacity>
-      </View>
+      </ScrollView>
     </ScreenContainer>
   );
 }
@@ -159,9 +159,9 @@ const makeStyles = (r, insets) => StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: r(16),
-    paddingTop: insets.top + r(16),
-    paddingBottom: r(16),
+    paddingHorizontal: r.moderate(16),
+    paddingTop: r.moderate(16),
+    paddingBottom: r.moderate(16),
     backgroundColor: COLORS.surface,
     elevation: 2,
     shadowColor: '#000',
@@ -170,26 +170,27 @@ const makeStyles = (r, insets) => StyleSheet.create({
     shadowRadius: 2,
   },
   backButton: {
-    padding: r(8),
-    marginRight: r(8),
+    padding: r.moderate(8),
+    marginRight: r.moderate(8),
   },
   headerTitle: {
-    fontSize: r(20),
+    fontSize: r.font(20),
     fontWeight: 'bold',
     color: COLORS.textPrimary,
   },
   content: {
-    padding: r(16),
-    gap: r(16),
+    padding: r.moderate(16),
+    paddingBottom: insets.bottom + r.moderate(16),
+    gap: r.scale(16),
   },
   actionButton: {
     backgroundColor: COLORS.primary,
     flexDirection: 'row',
-    padding: r(16),
-    borderRadius: r(12),
+    padding: r.moderate(16),
+    borderRadius: r.moderate(12),
     alignItems: 'center',
     justifyContent: 'center',
-    gap: r(12),
+    gap: r.scale(12),
   },
   restoreButton: {
     backgroundColor: COLORS.danger,
@@ -201,7 +202,7 @@ const makeStyles = (r, insets) => StyleSheet.create({
   },
   actionButtonText: {
     color: '#fff',
-    fontSize: r(16),
+    fontSize: r.font(16),
     fontWeight: '600',
   },
 });

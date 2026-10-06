@@ -128,8 +128,6 @@ export default function HomeScreen({ navigation }) {
 
   return (
     <ScreenContainer>
-      <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
-
       {/* Notebook Header */}
       <View style={styles.header}>
         <View style={{ flex: 1, marginRight: r.moderate(8) }}>
@@ -394,7 +392,7 @@ const makeStyles = (r, insets) => StyleSheet.create({
   fab: {
     position: 'absolute',
     bottom: insets.bottom + 16,
-    right: insets.right + 16,
+    right: 16,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.primary,

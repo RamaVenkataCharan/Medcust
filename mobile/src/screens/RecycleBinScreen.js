@@ -89,13 +89,13 @@ export default function RecycleBinScreen({ navigation }) {
   };
 
   return (
-    <ScreenContainer edges={['top', 'bottom']} style={styles.container}>
+    <ScreenContainer style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={r(28)} color={COLORS.text} />
+          <Ionicons name="arrow-back" size={r.scale(28)} color={COLORS.textPrimary} />
         </TouchableOpacity>
         <Text {...TEXT_PROPS} style={styles.headerTitle}>Recycle Bin</Text>
-        <View style={{ width: r(28) }} />
+        <View style={{ width: r.scale(28) }} />
       </View>
 
       <FlatList
@@ -105,7 +105,7 @@ export default function RecycleBinScreen({ navigation }) {
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Ionicons name="trash-outline" size={r(64)} color={COLORS.border} />
+            <Ionicons name="trash-outline" size={r.scale(64)} color={COLORS.borderStrong} />
             <Text {...TEXT_PROPS} style={styles.emptyText}>Recycle bin is empty</Text>
           </View>
         }
@@ -123,79 +123,79 @@ const makeStyles = (r, insets) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: r(16),
-    paddingVertical: r(16),
+    paddingHorizontal: r.moderate(16),
+    paddingVertical: r.moderate(16),
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
   backBtn: {
-    padding: r(4),
+    padding: r.moderate(4),
   },
   headerTitle: {
-    fontSize: r(20),
+    fontSize: r.font(20),
     fontWeight: 'bold',
-    color: COLORS.text,
+    color: COLORS.textPrimary,
   },
   listContent: {
-    padding: r(16),
-    paddingBottom: r(24) + insets.bottom,
+    padding: r.moderate(16),
+    paddingBottom: r.moderate(24) + insets.bottom,
   },
   card: {
     backgroundColor: COLORS.surface,
-    borderRadius: r(12),
-    padding: r(16),
-    marginBottom: r(12),
+    borderRadius: r.moderate(12),
+    padding: r.moderate(16),
+    marginBottom: r.moderate(12),
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     elevation: 2,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: r(1) },
+    shadowOffset: { width: 0, height: r.scale(1) },
     shadowOpacity: 0.1,
-    shadowRadius: r(2),
+    shadowRadius: r.scale(2),
   },
   cardInfo: {
     flex: 1,
-    marginRight: r(12),
+    marginRight: r.moderate(12),
   },
   name: {
-    fontSize: r(16),
+    fontSize: r.font(16),
     fontWeight: '600',
-    color: COLORS.text,
-    marginBottom: r(4),
+    color: COLORS.textPrimary,
+    marginBottom: r.scale(4),
   },
   details: {
-    fontSize: r(14),
-    color: COLORS.textLight,
-    marginBottom: r(2),
+    fontSize: r.font(14),
+    color: COLORS.textSecondary,
+    marginBottom: r.scale(2),
   },
   deletedDays: {
-    fontSize: r(13),
+    fontSize: r.font(13),
     color: COLORS.danger,
-    marginTop: r(4),
+    marginTop: r.scale(4),
   },
   cardActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: r(12),
+    gap: r.scale(12),
   },
   actionBtn: {
     alignItems: 'center',
-    padding: r(8),
+    padding: r.moderate(8),
   },
   actionText: {
-    fontSize: r(12),
-    marginTop: r(4),
+    fontSize: r.font(12),
+    marginTop: r.scale(4),
     fontWeight: '500',
   },
   emptyState: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: r(64),
+    paddingVertical: r.moderate(64),
   },
   emptyText: {
-    fontSize: r(16),
-    color: COLORS.textLight,
-    marginTop: r(16),
+    fontSize: r.font(16),
+    color: COLORS.textSecondary,
+    marginTop: r.scale(16),
   },
 });

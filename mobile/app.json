@@ -9,9 +9,7 @@
     "backgroundColor": "#FAF7F2",
     "android": {
       "package": "com.medtrack.mobile",
-      "softwareKeyboardLayoutMode": "pan",
-      "windowSoftInputMode": "adjustResize",
-      "windowLayoutInDisplayCutoutMode": "shortEdges",
+      "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "backgroundColor": "#FAF7F2",
         "foregroundImage": "./assets/android-icon-foreground.png",
