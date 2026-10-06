@@ -384,13 +384,22 @@ export default function CustomerProfileScreen({ route, navigation }) {
 
         <Text {...TEXT_PROPS} style={styles.navTitle} numberOfLines={1}>{customer.name}</Text>
 
-        <TouchableOpacity
-          style={styles.trashBtn}
-          onPress={handleDelete}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <Ionicons name="trash-outline" size={r.scale(22)} color={COLORS.primary} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <TouchableOpacity
+            style={[styles.trashBtn, { marginRight: 16 }]}
+            onPress={() => navigation.navigate('EditCustomer', { customerId: customer.customer_id })}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="pencil" size={r.scale(22)} color={COLORS.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.trashBtn}
+            onPress={handleDelete}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="trash-outline" size={r.scale(22)} color={COLORS.primary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {r.columns === 2 ? (

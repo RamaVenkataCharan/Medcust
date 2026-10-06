@@ -245,6 +245,14 @@ export function getCustomerById(customerId) {
   `, [numericId]);
 }
 
+export function getAllCustomers() {
+  if (Platform.OS === 'web') {
+    return getWebState().customers;
+  }
+  const db = getNativeDb();
+  return db.getAllSync(`SELECT * FROM customers;`);
+}
+
 export function getCustomerByPhone(phoneNumber) {
   const cleaned = cleanPhoneNumber(phoneNumber);
 
@@ -289,6 +297,54 @@ export function addCustomer({ name, phone_number, village, address }) {
   `, [cleanedPhone, name.trim(), village ? village.trim() : null, address ? address.trim() : null, now]);
 
   return result.lastInsertRowId;
+}
+
+export function updateCustomer(customerId, { name, phone_number, village, address }) {
+  const numericId = parseInt(customerId, 10);
+  const cleanedPhone = cleanPhoneNumber(phone_number);
+  const now = getCurrentLocalIso();
+  
+  if (Platform.OS === 'web') {
+    const state = getWebState();
+    const cust = state.customers.find((c) => c.customer_id === numericId);
+    if (!cust) return false;
+    
+    cust.name = name.trim();
+    cust.phone_number = cleanedPhone;
+    cust.village = village ? village.trim() : null;
+    cust.address = address ? address.trim() : null;
+    
+    if ('updated_at' in cust) {
+      cust.updated_at = now;
+    }
+    
+    saveWebState(state);
+    return true;
+  }
+  
+  const db = getNativeDb();
+  // We only update updated_at if the column exists in schema.
+  // Currently, updated_at doesn't exist, but we can do a PRAGMA table_info check or just run the query.
+  // Actually, we are forbidden from adding updated_at. We should only update it if it exists.
+  let hasUpdatedAt = false;
+  try {
+    const columns = db.getAllSync("PRAGMA table_info(customers);");
+    hasUpdatedAt = columns.some(c => c.name === 'updated_at');
+  } catch(e) {}
+  
+  let q = `UPDATE customers SET name = ?, phone_number = ?, village = ?, address = ?`;
+  let params = [name.trim(), cleanedPhone, village ? village.trim() : null, address ? address.trim() : null];
+  
+  if (hasUpdatedAt) {
+    q += `, updated_at = ?`;
+    params.push(now);
+  }
+  
+  q += ` WHERE customer_id = ?;`;
+  params.push(numericId);
+  
+  const result = db.runSync(q, params);
+  return result.changes > 0;
 }
 
 export function getCustomerLedger(customerId) {
