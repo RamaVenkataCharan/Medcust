@@ -1,4 +1,4 @@
-import { validateBackupJson } from '../src/utils/importValidator';
+import { validateBackupJson, verifyImport } from '../src/utils/importValidator';
 
 describe('importValidator', () => {
   const validBackup = {
@@ -100,5 +100,35 @@ describe('importValidator', () => {
       ]
     };
     expect(() => validateBackupJson(JSON.stringify(invalidBackup))).toThrow("Invalid entry_date on entry 1");
+  });
+});
+
+describe('verifyImport', () => {
+  const expected = {
+    customers: [{ customer_id: 1, phone_number: '123' }],
+    entries: [
+      { entry_id: 1, customer_id: 1, total_amount: 100, amount_paid: 0, due_amount: 100 },
+      { entry_id: 2, customer_id: 1, total_amount: 0, amount_paid: 20, due_amount: -20 } // Payment
+    ],
+    entryMedicines: [{ id: 1, entry_id: 1, medicine_name: 'Med', price: 100, discount: 0 }]
+  };
+
+  test('accepts matching expected and actual', () => {
+    // deep copy to avoid reference issues
+    const actual = JSON.parse(JSON.stringify(expected));
+    expect(verifyImport(expected, actual)).toBe(true);
+  });
+
+  test('rejects row count mismatch', () => {
+    const actual = JSON.parse(JSON.stringify(expected));
+    actual.customers.push({ customer_id: 2, phone_number: '456' });
+    expect(() => verifyImport(expected, actual)).toThrow(/Customer count mismatch/);
+  });
+
+  test('rejects per-customer due mismatch', () => {
+    const actual = JSON.parse(JSON.stringify(expected));
+    // simulate DB returning wrong due_amount or missing an entry
+    actual.entries[1].due_amount = -10; // Only 10 paid instead of 20
+    expect(() => verifyImport(expected, actual)).toThrow(/due mismatch: expected 80, got 90/);
   });
 });

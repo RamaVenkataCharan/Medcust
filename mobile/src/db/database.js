@@ -475,3 +475,80 @@ export function exportAllData() {
     entryMedicines,
   };
 }
+
+export async function restoreDatabaseFromJson(data) {
+  const { verifyImport } = require('../utils/importValidator');
+
+  if (Platform.OS === 'web') {
+    // Web fallback (Atomic by definition via localStorage.setItem)
+    const newState = {
+      customers: data.customers || [],
+      entries: data.entries || [],
+      entry_medicines: data.entryMedicines || [],
+      nextCustomerId: Math.max(1, ...(data.customers || []).map(c => c.customer_id)) + 1,
+      nextEntryId: Math.max(1, ...(data.entries || []).map(e => e.entry_id)) + 1,
+      nextMedicineId: Math.max(1, ...(data.entryMedicines || []).map(m => m.id)) + 1,
+    };
+    
+    // Verify first, swap only after passes
+    // Map web keys for verifyImport which expects entryMedicines
+    const actualForVerify = {
+      customers: newState.customers,
+      entries: newState.entries,
+      entryMedicines: newState.entry_medicines
+    };
+    verifyImport(data, actualForVerify);
+    
+    saveWebState(newState);
+    return true;
+  }
+
+  // Native expo-sqlite
+  const db = getNativeDb();
+  
+  await db.withExclusiveTransactionAsync(async () => {
+    // 1. Delete child rows first (replace only)
+    await db.runAsync(`DELETE FROM entry_medicines;`);
+    await db.runAsync(`DELETE FROM entries;`);
+    await db.runAsync(`DELETE FROM customers;`);
+
+    // (If shop_profile exists in the future, we don't delete it because it's not in the backup)
+
+    // 2. Insert customers
+    for (const c of data.customers) {
+      await db.runAsync(
+        `INSERT INTO customers (customer_id, phone_number, name, village, address, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+        [c.customer_id, c.phone_number, c.name, c.village || '', c.address || '', c.created_at || getCurrentLocalIso()]
+      );
+    }
+
+    // 3. Insert entries (with defaults, so deleted_at can be added later)
+    for (const e of data.entries) {
+      await db.runAsync(
+        `INSERT INTO entries (entry_id, customer_id, entry_date, total_amount, amount_paid, due_amount, note) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [e.entry_id, e.customer_id, e.entry_date || getCurrentLocalIso(), e.total_amount || 0, e.amount_paid || 0, e.due_amount || 0, e.note || null]
+      );
+    }
+
+    // 4. Insert entryMedicines
+    for (const m of data.entryMedicines) {
+      await db.runAsync(
+        `INSERT INTO entry_medicines (id, entry_id, medicine_name, price, discount) VALUES (?, ?, ?, ?, ?)`,
+        [m.id, m.entry_id, m.medicine_name, m.price || 0, m.discount || 0]
+      );
+    }
+
+    // 5. Verify import integrity
+    const actualCustomers = await db.getAllAsync(`SELECT * FROM customers`);
+    const actualEntries = await db.getAllAsync(`SELECT * FROM entries`);
+    const actualEntryMedicines = await db.getAllAsync(`SELECT * FROM entry_medicines`);
+    
+    verifyImport(data, {
+      customers: actualCustomers,
+      entries: actualEntries,
+      entryMedicines: actualEntryMedicines
+    });
+  });
+
+  return true;
+}

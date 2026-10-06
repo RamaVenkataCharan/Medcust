@@ -89,3 +89,41 @@ export function validateBackupJson(fileString) {
 
   return true;
 }
+
+export function verifyImport(expected, actual) {
+  // 1. Verify row counts
+  if (expected.customers.length !== actual.customers.length) {
+    throw new Error(`Customer count mismatch: expected ${expected.customers.length}, got ${actual.customers.length}`);
+  }
+  if (expected.entries.length !== actual.entries.length) {
+    throw new Error(`Entry count mismatch: expected ${expected.entries.length}, got ${actual.entries.length}`);
+  }
+  if (expected.entryMedicines.length !== actual.entryMedicines.length) {
+    throw new Error(`Medicine count mismatch: expected ${expected.entryMedicines.length}, got ${actual.entryMedicines.length}`);
+  }
+
+  // 2. Compare per-customer derived due
+  // We use the same business logic for both expected and actual to prevent SQL SUM() float issues
+  const { calculateCustomerTotalDue } = require('./khataLogic');
+  
+  const expectedDues = {};
+  for (const c of expected.customers) {
+    const custEntries = expected.entries.filter(e => e.customer_id === c.customer_id);
+    expectedDues[c.customer_id] = calculateCustomerTotalDue(custEntries);
+  }
+
+  const actualDues = {};
+  for (const c of actual.customers) {
+    const custEntries = actual.entries.filter(e => e.customer_id === c.customer_id);
+    actualDues[c.customer_id] = calculateCustomerTotalDue(custEntries);
+  }
+
+  for (const [customerId, expectedDue] of Object.entries(expectedDues)) {
+    const actualDue = actualDues[customerId];
+    if (Math.abs(expectedDue - actualDue) > 0.01) {
+      throw new Error(`Customer ${customerId} due mismatch: expected ${expectedDue}, got ${actualDue}`);
+    }
+  }
+
+  return true;
+}
