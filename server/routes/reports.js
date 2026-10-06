@@ -48,7 +48,7 @@ router.get('/dues', (req, res) => {
     // Compute derived total_due for each debtor
     let debtors = customers
       .map((c) => {
-        const totalDue = getCustomerDue(c.customer_id);
+        const totalDue = getCustomerDue(c.customer_id) / 100;
         if (totalDue <= 0) return null;
 
         return {
@@ -132,7 +132,7 @@ router.get('/stats', (req, res) => {
     let totalOutstanding = 0;
     let debtorCount = 0;
     for (const c of customers) {
-      const due = getCustomerDue(c.customer_id);
+      const due = getCustomerDue(c.customer_id) / 100;
       if (due > 0) {
         totalOutstanding += due;
         debtorCount++;

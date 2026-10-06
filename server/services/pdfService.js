@@ -87,8 +87,10 @@ function generateBillPdf(data, outputStream) {
     .font('Helvetica-Bold')
     .fillColor('#334155')
     .text('#', 35, tableStartY + 5, { width: 20 })
-    .text('MEDICINE / ITEM', 60, tableStartY + 5, { width: 215 })
-    .text('PRICE', 285, tableStartY + 5, { width: 100, align: 'right' });
+    .text('MEDICINE / ITEM', 60, tableStartY + 5, { width: 150 })
+    .text('PRICE', 215, tableStartY + 5, { width: 50, align: 'right' })
+    .text('DISC.', 270, tableStartY + 5, { width: 50, align: 'right' })
+    .text('NET', 325, tableStartY + 5, { width: 60, align: 'right' });
 
   let currentY = tableStartY + 22;
 
@@ -103,31 +105,57 @@ function generateBillPdf(data, outputStream) {
 
     const name = med.medicine_name || med.name || 'Medicine';
     const price = parseFloat(med.price || 0);
+    const discount = parseFloat(med.discount || 0);
+    const net = price - discount;
 
     doc
       .fontSize(8)
       .font('Helvetica')
       .fillColor('#1e293b')
       .text(`${index + 1}`, 35, currentY, { width: 20 })
-      .text(name, 60, currentY, { width: 215, ellipsis: true })
-      .text(price > 0 ? `Rs. ${price.toFixed(2)}` : '—', 285, currentY, { width: 100, align: 'right' });
+      .text(name, 60, currentY, { width: 150, ellipsis: true })
+      .text(price > 0 ? `${price.toFixed(2)}` : '—', 215, currentY, { width: 50, align: 'right' })
+      .fillColor(discount > 0 ? '#16a34a' : '#94a3b8')
+      .text(discount > 0 ? `-${discount.toFixed(2)}` : '—', 270, currentY, { width: 50, align: 'right' })
+      .fillColor('#1e293b')
+      .text(net > 0 ? `${net.toFixed(2)}` : '—', 325, currentY, { width: 60, align: 'right' });
 
     currentY += 15;
   });
+
+  const totalDiscount = medicines.reduce((sum, med) => sum + parseFloat(med.discount || 0), 0);
 
   doc.strokeColor('#e2e8f0').lineWidth(1).moveTo(30, currentY + 3).lineTo(doc.page.width - 30, currentY + 3).stroke();
   currentY += 8;
 
   // ── Financial Summary ──
   const summaryX = doc.page.width - 210;
+  const grandTotal = parseFloat(data.total_amount || data.totalAmount || 0);
+
+  if (totalDiscount > 0) {
+    const subtotal = grandTotal + totalDiscount;
+    doc
+      .fontSize(8.5)
+      .font('Helvetica')
+      .fillColor('#334155')
+      .text('Subtotal:', summaryX, currentY, { width: 100, align: 'right' })
+      .text(`Rs. ${subtotal.toFixed(2)}`, summaryX + 105, currentY, { width: 75, align: 'right' });
+    currentY += 13;
+
+    doc
+      .font('Helvetica')
+      .fillColor('#16a34a')
+      .text('Total Discount:', summaryX, currentY, { width: 100, align: 'right' })
+      .text(`- Rs. ${totalDiscount.toFixed(2)}`, summaryX + 105, currentY, { width: 75, align: 'right' });
+    currentY += 13;
+  }
 
   doc
     .fontSize(8.5)
-    .font('Helvetica')
-    .fillColor('#334155')
-    .text('Total Amount:', summaryX, currentY, { width: 100, align: 'right' })
     .font('Helvetica-Bold')
-    .text(`Rs. ${parseFloat(data.total_amount || data.totalAmount || 0).toFixed(2)}`, summaryX + 105, currentY, { width: 75, align: 'right' });
+    .fillColor('#334155')
+    .text('Net Total:', summaryX, currentY, { width: 100, align: 'right' })
+    .text(`Rs. ${grandTotal.toFixed(2)}`, summaryX + 105, currentY, { width: 75, align: 'right' });
 
   currentY += 13;
 

@@ -111,6 +111,15 @@ function addEntry({ customerId, totalAmount, amountPaid, medicines, entryDate })
       throw new Error('Customer not found');
     }
 
+    let finalEntryDate = null;
+    if (entryDate) {
+      try {
+        finalEntryDate = new Date(entryDate).toISOString();
+      } catch (e) {
+        // Fallback to SQLite default if invalid date
+      }
+    }
+
     // 2. Insert entry
     const insertEntryStmt = db.prepare(`
       INSERT INTO entries (customer_id, entry_date, total_amount, amount_paid, due_amount)
@@ -119,7 +128,7 @@ function addEntry({ customerId, totalAmount, amountPaid, medicines, entryDate })
 
     const entryResult = insertEntryStmt.run(
       customerId,
-      entryDate || null,
+      finalEntryDate,
       payload.total_amount,
       payload.amount_paid,
       payload.due_amount

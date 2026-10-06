@@ -20,7 +20,7 @@ router.post('/', (req, res) => {
       return res.status(400).json({ error: 'Payment amount must be greater than 0' });
     }
 
-    const currentDue = getCustomerDue(targetCustomerId);
+    const currentDue = getCustomerDue(targetCustomerId) / 100;
     const allowOverride = allowOverpayment || allow_overpayment;
 
     if (cleanAmount > currentDue && !allowOverride) {
