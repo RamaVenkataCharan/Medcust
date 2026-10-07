@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback, memo, useMemo } from 'react';
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   ScrollView,
   Alert,
@@ -11,6 +10,7 @@ import {
   ActivityIndicator,
   StyleSheet
 } from 'react-native';
+import CustomTextInput from '../components/CustomTextInput';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -287,7 +287,7 @@ export default function RecordPaymentScreen({ route, navigation }) {
             <Text {...TEXT_PROPS} style={styles.cardTitle}>Amount Received</Text>
             <View style={styles.amountInputContainer}>
               <Text {...TEXT_PROPS} style={styles.currencySymbol}>₹</Text>
-              <TextInput
+              <CustomTextInput
                 style={styles.amountInput}
                 value={amount}
                 onChangeText={(val) => {
@@ -344,7 +344,7 @@ export default function RecordPaymentScreen({ route, navigation }) {
 
           <View style={styles.card}>
             <Text {...TEXT_PROPS} style={styles.cardTitle}>Note (Optional)</Text>
-            <TextInput
+            <CustomTextInput
               style={styles.noteInput}
               value={note}
               onChangeText={setNote}

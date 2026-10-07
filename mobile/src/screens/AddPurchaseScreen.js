@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback, useRef, memo, useMemo } from '
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   ScrollView,
   Alert,
@@ -11,6 +10,7 @@ import {
   ActivityIndicator,
   StyleSheet
 } from 'react-native';
+import CustomTextInput from '../components/CustomTextInput';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../constants/theme';
@@ -62,7 +62,7 @@ const MedicineTableRow = memo(function MedicineTableRow({
       {index > 0 && <View style={styles.rowDivider} />}
       <View style={styles.tableRow}>
         <View style={styles.colName}>
-          <TextInput
+          <CustomTextInput
             ref={nameRef}
             style={styles.cellInput}
             value={item.name}
@@ -80,7 +80,7 @@ const MedicineTableRow = memo(function MedicineTableRow({
         </View>
 
         <View style={styles.colPrice}>
-          <TextInput
+          <CustomTextInput
             ref={priceRef}
             style={[styles.cellInput, styles.cellRight]}
             value={item.price}
@@ -100,7 +100,7 @@ const MedicineTableRow = memo(function MedicineTableRow({
 
         <View style={styles.colDiscount}>
           <View style={styles.discountCell}>
-            <TextInput
+            <CustomTextInput
               ref={discountRef}
               style={[styles.cellInput, styles.cellCenter, styles.discountInput]}
               value={item.discount}
@@ -507,7 +507,7 @@ export default function AddPurchaseScreen({ route, navigation }) {
 
             <View style={styles.totalRow}>
               <Text {...TEXT_PROPS} style={styles.totalLabel}>Paid Now</Text>
-              <TextInput
+              <CustomTextInput
                 style={styles.paidNowInput}
                 value={amountPaid}
                 onChangeText={(val) => {

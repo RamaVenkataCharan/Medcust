@@ -2,13 +2,13 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   View,
   Text,
-  TextInput,
   FlatList,
   TouchableOpacity,
   StatusBar,
   ActivityIndicator,
   StyleSheet
 } from 'react-native';
+import CustomTextInput from '../components/CustomTextInput';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -149,7 +149,7 @@ export default function HomeScreen({ navigation }) {
       {/* Auto-focused Large Search Box */}
       <View style={styles.searchContainer}>
         <Ionicons name="search" size={r.scale(20)} color={COLORS.textTertiary} style={styles.searchIcon} />
-        <TextInput
+        <CustomTextInput
           style={styles.searchInput}
           placeholder="Search by phone or name..."
           placeholderTextColor={COLORS.textTertiary}

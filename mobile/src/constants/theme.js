@@ -1,3 +1,5 @@
+import { Platform } from 'react-native';
+
 export const COLORS = {
   // Notebook canvas
   background: '#FAF7F2',       // Warm ivory notebook page
@@ -95,4 +97,15 @@ export const FONTS = {
     fontSize: 12,
     color: COLORS.textTertiary,
   },
+};
+
+export const GLOBAL_STYLES = {
+  noFocusOutline: Platform.select({
+    web: {
+      outlineStyle: 'none',
+      outlineWidth: 0,
+      boxShadow: 'none',
+    },
+    default: {}
+  }),
 };

@@ -2,7 +2,6 @@ import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   ScrollView,
   Alert,
@@ -10,6 +9,7 @@ import {
   Platform,
   StyleSheet
 } from 'react-native';
+import CustomTextInput from '../components/CustomTextInput';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../constants/theme';
@@ -89,7 +89,7 @@ export default function EditCustomerScreen({ navigation, route }) {
           <View style={styles.formCard}>
             <View style={styles.inputGroup}>
               <Text {...TEXT_PROPS} style={styles.label}>Customer Name *</Text>
-              <TextInput
+              <CustomTextInput
                 style={styles.input}
                 placeholder="e.g. Ramesh Kumar"
                 placeholderTextColor={COLORS.textTertiary}
@@ -103,7 +103,7 @@ export default function EditCustomerScreen({ navigation, route }) {
 
             <View style={styles.inputGroup}>
               <Text {...TEXT_PROPS} style={styles.label}>Phone Number (10 digits) *</Text>
-              <TextInput
+              <CustomTextInput
                 style={styles.input}
                 placeholder="e.g. 9876543210"
                 placeholderTextColor={COLORS.textTertiary}
@@ -117,7 +117,7 @@ export default function EditCustomerScreen({ navigation, route }) {
 
             <View style={styles.inputGroup}>
               <Text {...TEXT_PROPS} style={styles.label}>Village / Locality (Optional)</Text>
-              <TextInput
+              <CustomTextInput
                 style={styles.input}
                 placeholder="e.g. Nizampet"
                 placeholderTextColor={COLORS.textTertiary}
@@ -130,7 +130,7 @@ export default function EditCustomerScreen({ navigation, route }) {
 
             <View style={styles.inputGroup}>
               <Text {...TEXT_PROPS} style={styles.label}>Address / Landmark (Optional)</Text>
-              <TextInput
+              <CustomTextInput
                 style={[styles.input, styles.textArea]}
                 placeholder="e.g. Near Ramalayam Temple"
                 placeholderTextColor={COLORS.textTertiary}
