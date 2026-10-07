@@ -163,7 +163,7 @@ export default function AddPurchaseScreen({ route, navigation }) {
 
   const r = useResponsive();
   const insets = useSafeAreaInsets();
-  const styles = useMemo(() => makeStyles(r, footerH), [r, footerH]);
+  const styles = useMemo(() => makeStyles(r, footerH, insets), [r, footerH, insets]);
 
   useEffect(() => {
     try {
@@ -573,7 +573,7 @@ const COL_PRICE_FLEX = 1.3;
 const COL_DISCOUNT_FLEX = 1.5;
 const COL_NET_FLEX = 1.3;
 
-const makeStyles = (r, footerH) => StyleSheet.create({
+const makeStyles = (r, footerH, insets) => StyleSheet.create({
   flex: { flex: 1 },
   header: {
     flexDirection: 'row',
