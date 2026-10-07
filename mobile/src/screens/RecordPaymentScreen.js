@@ -93,7 +93,7 @@ export default function RecordPaymentScreen({ route, navigation }) {
 
   const r = useResponsive();
   const insets = useSafeAreaInsets();
-  const styles = useMemo(() => makeStyles(r, footerH), [r, footerH]);
+  const styles = useMemo(() => makeStyles(r, footerH, insets), [r, footerH, insets]);
 
   useFocusEffect(
     useCallback(() => {
@@ -382,7 +382,7 @@ export default function RecordPaymentScreen({ route, navigation }) {
   );
 }
 
-const makeStyles = (r, footerH) => StyleSheet.create({
+const makeStyles = (r, footerH, insets) => StyleSheet.create({
   flex: { flex: 1 },
   header: {
     flexDirection: 'row',
