@@ -17,6 +17,7 @@ import { updateCustomer, getCustomerById, getAllCustomers } from '../db/database
 import { validateCustomerInput } from '../utils/customerValidation';
 import { useResponsive, TEXT_PROPS } from '../utils/responsive';
 import ScreenContainer from '../components/ScreenContainer';
+import StickyFooter from '../components/StickyFooter';
 
 export default function EditCustomerScreen({ navigation, route }) {
   const { customerId } = route.params;
