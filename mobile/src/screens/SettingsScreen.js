@@ -14,13 +14,12 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 
-import { COLORS } from '../constants/theme';
+import { COLORS, TEXT_PROPS } from '../constants/theme';
 import ScreenContainer from '../components/ScreenContainer';
 import { useResponsive } from '../utils/responsive';
 import { exportKhataBackup } from '../services/exportService';
 import { performAtomicRestore } from '../services/importService';
 import { validateBackupJson } from '../utils/importValidator';
-import { getNativeDb } from '../db/database'; // We need current counts, we can fetch them here
 import { exportAllData } from '../db/database'; // simpler to get counts
 
 export default function SettingsScreen({ navigation }) {
