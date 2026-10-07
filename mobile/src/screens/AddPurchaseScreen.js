@@ -75,6 +75,7 @@ const MedicineTableRow = memo(function MedicineTableRow({
             onSubmitEditing={() => priceRef && priceRef.current && priceRef.current.focus()}
             onFocus={() => onFocus(item.id)}
             accessibilityLabel={`Medicine name ${index + 1}`}
+            testID={`medicineName_${index}`}
             {...TEXT_PROPS}
           />
         </View>
@@ -94,6 +95,7 @@ const MedicineTableRow = memo(function MedicineTableRow({
             onSubmitEditing={() => discountRef && discountRef.current && discountRef.current.focus()}
             onFocus={() => onFocus(item.id)}
             accessibilityLabel={`Actual price for medicine ${index + 1}`}
+            testID={`medicinePrice_${index}`}
             {...TEXT_PROPS}
           />
         </View>
@@ -114,12 +116,14 @@ const MedicineTableRow = memo(function MedicineTableRow({
               onSubmitEditing={() => nextNameRef && nextNameRef.current && nextNameRef.current.focus()}
               onFocus={() => onFocus(item.id)}
               accessibilityLabel={`Discount for medicine ${index + 1}`}
+              testID={`medicineDiscount_${index}`}
               {...TEXT_PROPS}
             />
             <TouchableOpacity
               style={styles.modeChip}
               onPress={onToggleMode}
               hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              testID={`medicineMode_${index}`}
             >
               <Text {...TEXT_PROPS} style={styles.modeChipText}>{item.discountMode}</Text>
             </TouchableOpacity>
@@ -317,13 +321,11 @@ export default function AddPurchaseScreen({ route, navigation }) {
 
     setSaving(true);
     try {
-      const medsForDb = validRows.map((m) => {
-        const actual = parseFloat(m.price) || 0;
-        const discR = discountToRupees(m.discount, m.discountMode, actual);
-        const netPrice = fromPaise(Math.max(0, paise(actual) - paise(discR)));
+      const medsForDb = bill.rows.map((r) => {
         return {
-          name: m.name.trim(),
-          price: parseFloat(netPrice.toFixed(2)),
+          name: r.name.trim(),
+          price: r.pricePaise / 100,
+          discount: r.discountPaise / 100,
         };
       });
 
@@ -510,6 +512,7 @@ export default function AddPurchaseScreen({ route, navigation }) {
               <CustomTextInput
                 style={styles.paidNowInput}
                 value={amountPaid}
+                testID="paidNowInput"
                 onChangeText={(val) => {
                   setAmountPaid(sanitiseNumeric(val));
                   setPaidError('');
