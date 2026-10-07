@@ -202,7 +202,7 @@ export default function CustomerProfileScreen({ route, navigation }) {
 
   const r = useResponsive();
   const insets = useSafeAreaInsets();
-  const styles = useMemo(() => makeStyles(r, footerH), [r, footerH]);
+  const styles = useMemo(() => makeStyles(r, footerH, insets), [r, footerH, insets]);
 
   const loadProfile = useCallback(() => {
     try {
@@ -456,7 +456,7 @@ export default function CustomerProfileScreen({ route, navigation }) {
   );
 }
 
-const makeStyles = (r, footerH) => StyleSheet.create({
+const makeStyles = (r, footerH, insets) => StyleSheet.create({
   notFoundText: {
     fontSize: r.font(15),
     color: COLORS.textSecondary,
