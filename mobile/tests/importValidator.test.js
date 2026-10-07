@@ -132,3 +132,56 @@ describe('verifyImport', () => {
     expect(() => verifyImport(expected, actual)).toThrow(/due mismatch: expected 80, got 90/);
   });
 });
+
+describe('Per-row due validation', () => {
+  const baseBackup = {
+    version: '1.0',
+    customers: [{ customer_id: 1, phone_number: '9999999999', name: 'Test' }],
+    entries: [],
+    entryMedicines: []
+  };
+
+  test('rejects tampered due_amount', () => {
+    const backup = { ...baseBackup, entries: [
+      { entry_id: 1, customer_id: 1, total_amount: 100, amount_paid: 0, due_amount: 50 } // Tampered: should be 100
+    ]};
+    expect(() => validateBackupJson(JSON.stringify(backup))).toThrow('Tampered due_amount on entry 1');
+  });
+
+  test('accepts discounted purchase (fractional)', () => {
+    // 100 - 10% discount = 90. total_amount=90, paid=25.50, due=64.50
+    const backup = { ...baseBackup, entries: [
+      { entry_id: 1, customer_id: 1, total_amount: 90, amount_paid: 25.50, due_amount: 64.50 }
+    ]};
+    expect(validateBackupJson(JSON.stringify(backup))).toBe(true);
+  });
+
+  test('accepts payment row (total=0)', () => {
+    const backup = { ...baseBackup, entries: [
+      { entry_id: 1, customer_id: 1, total_amount: 0, amount_paid: 50, due_amount: -50 }
+    ]};
+    expect(validateBackupJson(JSON.stringify(backup))).toBe(true);
+  });
+
+  test('accepts float rounding differences within tolerance (0.01)', () => {
+    // total = 100.33, paid = 50.11, expected due = 50.22
+    // what if due_amount is 50.221 or 50.219 (float math artifact)?
+    const backup = { ...baseBackup, entries: [
+      { entry_id: 1, customer_id: 1, total_amount: 100.33, amount_paid: 50.11, due_amount: 50.225 }
+    ]};
+    expect(validateBackupJson(JSON.stringify(backup))).toBe(true);
+    
+    const backupFail = { ...baseBackup, entries: [
+      { entry_id: 2, customer_id: 1, total_amount: 100.33, amount_paid: 50.11, due_amount: 50.24 } // > 0.01
+    ]};
+    expect(() => validateBackupJson(JSON.stringify(backupFail))).toThrow('Tampered due_amount on entry 2');
+  });
+
+  test('tolerates missing due_amount in old backups', () => {
+    const backup = { ...baseBackup, entries: [
+      { entry_id: 1, customer_id: 1, total_amount: 100, amount_paid: 0 } // no due_amount
+    ]};
+    expect(validateBackupJson(JSON.stringify(backup))).toBe(true);
+  });
+});
+
