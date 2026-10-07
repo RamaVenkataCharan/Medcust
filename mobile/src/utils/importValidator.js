@@ -66,6 +66,12 @@ function validateBackupJson(fileString) {
       throw new Error(`Invalid due_amount on entry ${e.entry_id}`);
     }
 
+    const expectedDue = (parseFloat(e.total_amount) || 0) - (parseFloat(e.amount_paid) || 0);
+    if (e.due_amount !== undefined && Math.abs(expectedDue - e.due_amount) > 0.01) {
+      throw new Error(`Tampered due_amount on entry ${e.entry_id}`);
+    }
+
+
     if (e.entry_date) {
       if (isNaN(Date.parse(e.entry_date))) {
         throw new Error(`Invalid entry_date on entry ${e.entry_id}`);
