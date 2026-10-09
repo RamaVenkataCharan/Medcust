@@ -157,7 +157,8 @@ export function searchCustomers(query = '') {
           (c) =>
             !c.deleted_at &&
             (c.name.toLowerCase().includes(trimmed) ||
-             c.phone_number.includes(trimmed))
+             c.phone_number.includes(trimmed) ||
+             (c.village && c.village.toLowerCase().includes(trimmed)))
         )
       : results.filter((c) => !c.deleted_at);
 
@@ -201,11 +202,11 @@ export function searchCustomers(query = '') {
       MAX(e.entry_date) AS last_activity
     FROM customers c
     LEFT JOIN entries e ON c.customer_id = e.customer_id
-    WHERE c.deleted_at IS NULL AND (c.phone_number LIKE ? OR c.name LIKE ?)
+    WHERE c.deleted_at IS NULL AND (c.phone_number LIKE ? OR c.name LIKE ? OR c.village LIKE ?)
     GROUP BY c.customer_id
     ORDER BY c.name ASC
     LIMIT 50;
-  `, [pattern, pattern]);
+  `, [pattern, pattern, pattern]);
 }
 
 export function getCustomerById(customerId) {

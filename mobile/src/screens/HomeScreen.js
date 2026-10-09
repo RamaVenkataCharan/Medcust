@@ -151,7 +151,7 @@ export default function HomeScreen({ navigation }) {
         <Ionicons name="search" size={r.scale(20)} color={COLORS.textTertiary} style={styles.searchIcon} />
         <CustomTextInput
           style={styles.searchInput}
-          placeholder="Search by phone or name..."
+          placeholder="Search by phone, name or village..."
           placeholderTextColor={COLORS.textTertiary}
           value={query}
           onChangeText={setQuery}
