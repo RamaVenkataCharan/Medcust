@@ -41,6 +41,9 @@ function initNativeDatabase() {
       entry_id INTEGER PRIMARY KEY AUTOINCREMENT,
       customer_id INTEGER NOT NULL REFERENCES customers(customer_id),
       entry_date TEXT DEFAULT CURRENT_TIMESTAMP,
+      subtotal REAL NOT NULL DEFAULT 0,
+      discount_percent REAL NOT NULL DEFAULT 0,
+      discount_amount REAL NOT NULL DEFAULT 0,
       total_amount REAL NOT NULL DEFAULT 0,
       amount_paid REAL NOT NULL DEFAULT 0,
       due_amount REAL NOT NULL DEFAULT 0
@@ -100,64 +103,64 @@ function initNativeDatabase() {
   } catch (migErr) {
     console.warn('[MedTrack] Migration check for deleted_at column:', migErr);
   }
+
+  // Schema migration: guarantee subtotal, discount_percent, discount_amount exist on entries
   try {
-    db.execSync(`CREATE INDEX IF NOT EXISTS idx_customers_deleted ON customers(deleted_at);`);
-  } catch (idxErr) {
-    // Ignore index error
+    const entriesInfo = db.getAllSync(`PRAGMA table_info(entries);`);
+    const hasSubtotal = entriesInfo.some((col) => col.name === 'subtotal');
+    if (!hasSubtotal) {
+      db.execSync(`ALTER TABLE entries ADD COLUMN subtotal REAL DEFAULT 0;`);
+    }
+    const hasDiscountPercent = entriesInfo.some((col) => col.name === 'discount_percent');
+    if (!hasDiscountPercent) {
+      db.execSync(`ALTER TABLE entries ADD COLUMN discount_percent REAL DEFAULT 0;`);
+    }
+    const hasDiscountAmount = entriesInfo.some((col) => col.name === 'discount_amount');
+    if (!hasDiscountAmount) {
+      db.execSync(`ALTER TABLE entries ADD COLUMN discount_amount REAL DEFAULT 0;`);
+    }
+
+    // Backfill legacy rows where subtotal is 0 or null
+    db.execSync(`
+      UPDATE entries 
+      SET subtotal = total_amount 
+      WHERE (subtotal = 0 OR subtotal IS NULL) AND total_amount > 0;
+    `);
+  } catch (migErr) {
+    console.warn('[MedTrack] Migration check for entries discount columns:', migErr);
   }
 }
 
 // ─────────────────────────────────────────────────────────────
-// 2. WEB PERSISTENT DRIVER (Localhost browser fallback only)
+// 2. WEB FALLBACK DRIVER (localStorage simulation)
 // ─────────────────────────────────────────────────────────────
-const WEB_STORAGE_KEY = 'medtrack_web_db_v1';
+const WEB_STORAGE_KEY = 'medtrack_khata_web_state_v1';
 
 function getWebState() {
   try {
-    const raw = typeof window !== 'undefined' ? window.localStorage.getItem(WEB_STORAGE_KEY) : null;
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (!parsed.shop_profile) {
-        parsed.shop_profile = {
-          id: 1,
-          shop_name: '',
-          shop_license_no: '',
-          shop_license_validity: '',
-          shop_phone: '',
-          pharmacist_name: '',
-          pharmacist_phone: '',
-          pharmacist_license_validity: '',
-        };
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const data = window.localStorage.getItem(WEB_STORAGE_KEY);
+      if (data) {
+        const parsed = JSON.parse(data);
+        if (!parsed.customers) parsed.customers = [];
+        if (!parsed.entries) parsed.entries = [];
+        if (!parsed.entry_medicines) parsed.entry_medicines = [];
+        if (!parsed.shop_profile) parsed.shop_profile = {};
+        if (!parsed.nextCustomerId) parsed.nextCustomerId = parsed.customers.length + 1;
+        if (!parsed.nextEntryId) parsed.nextEntryId = parsed.entries.length + 1;
+        if (!parsed.nextMedicineId) parsed.nextMedicineId = parsed.entry_medicines.length + 1;
+        return parsed;
       }
-      if (Array.isArray(parsed.customers)) {
-        parsed.customers.forEach((c) => {
-          if (c.deleted_at === undefined) c.deleted_at = null;
-        });
-      }
-      if (Array.isArray(parsed.entry_medicines)) {
-        parsed.entry_medicines.forEach((m) => {
-          if (m.discount === undefined) m.discount = 0;
-        });
-      }
-      return parsed;
     }
   } catch (e) {
     console.warn('Could not read web localStorage:', e);
   }
+
   return {
     customers: [],
     entries: [],
     entry_medicines: [],
-    shop_profile: {
-      id: 1,
-      shop_name: '',
-      shop_license_no: '',
-      shop_license_validity: '',
-      shop_phone: '',
-      pharmacist_name: '',
-      pharmacist_phone: '',
-      pharmacist_license_validity: '',
-    },
+    shop_profile: {},
     nextCustomerId: 1,
     nextEntryId: 1,
     nextMedicineId: 1,
@@ -216,7 +219,8 @@ export function searchCustomers(query = '') {
       ? results.filter(
           (c) =>
             c.name.toLowerCase().includes(trimmed) ||
-            c.phone_number.includes(trimmed)
+            c.phone_number.includes(trimmed) ||
+            (c.village && c.village.toLowerCase().includes(trimmed))
         )
       : results;
 
@@ -260,11 +264,11 @@ export function searchCustomers(query = '') {
       MAX(e.entry_date) AS last_activity
     FROM customers c
     LEFT JOIN entries e ON c.customer_id = e.customer_id
-    WHERE c.deleted_at IS NULL AND (c.phone_number LIKE ? OR c.name LIKE ?)
+    WHERE c.deleted_at IS NULL AND (c.phone_number LIKE ? OR c.name LIKE ? OR c.village LIKE ?)
     GROUP BY c.customer_id
     ORDER BY c.name ASC
     LIMIT 50;
-  `, [pattern, pattern]);
+  `, [pattern, pattern, pattern]);
 }
 
 export function getCustomerById(customerId, includeDeleted = false) {
@@ -316,13 +320,13 @@ export function getCustomerByPhone(phoneNumber) {
   // Native expo-sqlite
   const db = getNativeDb();
   return db.getFirstSync(`
-    SELECT * FROM customers 
-    WHERE phone_number = ? OR phone_number LIKE ?
-    LIMIT 1;
-  `, [cleaned, `%${cleaned}`]);
+    SELECT customer_id, phone_number, name, village, address, created_at, deleted_at
+    FROM customers
+    WHERE phone_number = ?;
+  `, [cleaned]);
 }
 
-export function addCustomer({ name, phone_number, village, address }) {
+export function addCustomer({ phone_number, name, village = '', address = '' }) {
   const cleanedPhone = cleanPhoneNumber(phone_number);
   const now = getCurrentLocalIso();
 
@@ -335,6 +339,7 @@ export function addCustomer({ name, phone_number, village, address }) {
       village: village ? village.trim() : null,
       address: address ? address.trim() : null,
       created_at: now,
+      deleted_at: null,
     };
     state.customers.push(newCustomer);
     saveWebState(state);
@@ -344,11 +349,37 @@ export function addCustomer({ name, phone_number, village, address }) {
   // Native expo-sqlite
   const db = getNativeDb();
   const result = db.runSync(`
-    INSERT INTO customers (phone_number, name, village, address, created_at)
-    VALUES (?, ?, ?, ?, ?);
+    INSERT INTO customers (phone_number, name, village, address, created_at, deleted_at)
+    VALUES (?, ?, ?, ?, ?, NULL);
   `, [cleanedPhone, name.trim(), village ? village.trim() : null, address ? address.trim() : null, now]);
 
   return result.lastInsertRowId;
+}
+
+export function updateCustomer({ customerId, name, village = '', address = '' }) {
+  const numericId = parseInt(customerId, 10);
+  if (!numericId) return false;
+
+  if (Platform.OS === 'web') {
+    const state = getWebState();
+    const cust = state.customers.find((c) => c.customer_id === numericId);
+    if (!cust) return false;
+    cust.name = name.trim();
+    cust.village = village ? village.trim() : null;
+    cust.address = address ? address.trim() : null;
+    saveWebState(state);
+    return true;
+  }
+
+  // Native expo-sqlite
+  const db = getNativeDb();
+  const result = db.runSync(`
+    UPDATE customers 
+    SET name = ?, village = ?, address = ?
+    WHERE customer_id = ?;
+  `, [name.trim(), village ? village.trim() : null, address ? address.trim() : null, numericId]);
+
+  return (result.changes || 0) > 0;
 }
 
 export function deleteCustomer(customerId) {
@@ -367,11 +398,11 @@ export function deleteCustomer(customerId) {
 
   // Native expo-sqlite
   const db = getNativeDb();
-  db.runSync(`
+  const result = db.runSync(`
     UPDATE customers SET deleted_at = ? WHERE customer_id = ?;
   `, [now, numericId]);
 
-  return true;
+  return (result.changes || 0) > 0;
 }
 
 export function getTrashCustomers() {
@@ -408,11 +439,11 @@ export function restoreCustomer(customerId) {
 
   // Native expo-sqlite
   const db = getNativeDb();
-  db.runSync(`
+  const result = db.runSync(`
     UPDATE customers SET deleted_at = NULL WHERE customer_id = ?;
   `, [numericId]);
 
-  return true;
+  return (result.changes || 0) > 0;
 }
 
 export function permanentDeleteCustomer(customerId) {
@@ -473,6 +504,9 @@ export function getCustomerLedger(customerId) {
         }));
       return {
         ...entry,
+        subtotal: entry.subtotal != null ? entry.subtotal : entry.total_amount,
+        discount_percent: entry.discount_percent || 0,
+        discount_amount: entry.discount_amount || 0,
         medicines: meds,
       };
     });
@@ -485,6 +519,9 @@ export function getCustomerLedger(customerId) {
       entry_id, 
       customer_id, 
       entry_date, 
+      COALESCE(subtotal, total_amount) AS subtotal,
+      COALESCE(discount_percent, 0) AS discount_percent,
+      COALESCE(discount_amount, 0) AS discount_amount,
       total_amount, 
       amount_paid, 
       due_amount
@@ -516,25 +553,38 @@ export function getCustomerLedger(customerId) {
   }));
 }
 
-export function addPurchaseEntry({ customerId, medicines = [], totalAmount = 0, amountPaid = 0 }) {
+export function addPurchaseEntry({
+  customerId,
+  medicines = [],
+  subtotal = 0,
+  discountPercent = 0,
+  discountAmount = 0,
+  totalAmount = 0,
+  amountPaid = 0,
+}) {
   const numericId = parseInt(customerId, 10);
   const now = getCurrentLocalIso();
-  const parsedTotal = parseFloat(totalAmount) || 0;
+  const parsedSubtotal = parseFloat(subtotal) || parseFloat(totalAmount) || 0;
+  const parsedPercent = Math.max(0, parseFloat(discountPercent) || 0);
+  const parsedDiscountAmount = Math.max(0, parseFloat(discountAmount) || 0);
+  const parsedTotal = parseFloat(totalAmount) || Math.max(0, parsedSubtotal - parsedDiscountAmount);
   const parsedPaid = parseFloat(amountPaid) || 0;
   const dueAmount = calculateEntryDue(parsedTotal, parsedPaid);
 
   if (Platform.OS === 'web') {
     const state = getWebState();
     const entryId = state.nextEntryId++;
-    const newEntry = {
+    state.entries.push({
       entry_id: entryId,
       customer_id: numericId,
       entry_date: now,
+      subtotal: parsedSubtotal,
+      discount_percent: parsedPercent,
+      discount_amount: parsedDiscountAmount,
       total_amount: parsedTotal,
       amount_paid: parsedPaid,
       due_amount: dueAmount,
-    };
-    state.entries.push(newEntry);
+    });
 
     for (const med of medicines) {
       const cleaned = cleanMedicineName(med.name);
@@ -561,9 +611,9 @@ export function addPurchaseEntry({ customerId, medicines = [], totalAmount = 0, 
 
   db.withTransactionSync(() => {
     const res = db.runSync(`
-      INSERT INTO entries (customer_id, entry_date, total_amount, amount_paid, due_amount)
-      VALUES (?, ?, ?, ?, ?);
-    `, [numericId, now, parsedTotal, parsedPaid, dueAmount]);
+      INSERT INTO entries (customer_id, entry_date, subtotal, discount_percent, discount_amount, total_amount, amount_paid, due_amount)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+    `, [numericId, now, parsedSubtotal, parsedPercent, parsedDiscountAmount, parsedTotal, parsedPaid, dueAmount]);
 
     insertedEntryId = res.lastInsertRowId;
 
@@ -596,6 +646,9 @@ export function addDuePayment({ customerId, amountPaid }) {
       entry_id: entryId,
       customer_id: numericId,
       entry_date: now,
+      subtotal: 0,
+      discount_percent: 0,
+      discount_amount: 0,
       total_amount: 0,
       amount_paid: parsedPaid,
       due_amount: dueAmount,
@@ -607,8 +660,8 @@ export function addDuePayment({ customerId, amountPaid }) {
   // Native expo-sqlite
   const db = getNativeDb();
   const res = db.runSync(`
-    INSERT INTO entries (customer_id, entry_date, total_amount, amount_paid, due_amount)
-    VALUES (?, ?, 0, ?, ?);
+    INSERT INTO entries (customer_id, entry_date, subtotal, discount_percent, discount_amount, total_amount, amount_paid, due_amount)
+    VALUES (?, ?, 0, 0, 0, 0, ?, ?);
   `, [numericId, now, parsedPaid, dueAmount]);
 
   return res.lastInsertRowId;
@@ -779,7 +832,12 @@ export function importAllData(data) {
 
     const state = {
       customers: sanitizedCustomers,
-      entries: data.entries || [],
+      entries: (data.entries || []).map((e) => ({
+        ...e,
+        subtotal: e.subtotal != null ? e.subtotal : (e.total_amount || 0),
+        discount_percent: e.discount_percent || 0,
+        discount_amount: e.discount_amount || 0,
+      })),
       entry_medicines: medsList,
       shop_profile: data.shopProfile || data.shop_profile || {},
       nextCustomerId: nextCustId,
@@ -806,9 +864,19 @@ export function importAllData(data) {
 
     for (const e of (data.entries || [])) {
       db.runSync(`
-        INSERT INTO entries (entry_id, customer_id, entry_date, total_amount, amount_paid, due_amount)
-        VALUES (?, ?, ?, ?, ?, ?);
-      `, [e.entry_id, e.customer_id, e.entry_date, e.total_amount, e.amount_paid, e.due_amount]);
+        INSERT INTO entries (entry_id, customer_id, entry_date, subtotal, discount_percent, discount_amount, total_amount, amount_paid, due_amount)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+      `, [
+        e.entry_id,
+        e.customer_id,
+        e.entry_date,
+        e.subtotal != null ? e.subtotal : (e.total_amount || 0),
+        e.discount_percent || 0,
+        e.discount_amount || 0,
+        e.total_amount || 0,
+        e.amount_paid || 0,
+        e.due_amount || 0,
+      ]);
     }
 
     const meds = data.entryMedicines || data.entry_medicines || [];
@@ -826,4 +894,3 @@ export function importAllData(data) {
 
   return true;
 }
-

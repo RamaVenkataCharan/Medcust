@@ -4,21 +4,100 @@
  */
 
 /**
+ * Validates and normalizes Indian mobile phone numbers.
+ * Enforces strict TRAI 10-digit mobile standards (starting with 6, 7, 8, 9).
+ * Prevents silent truncation of >10 digits.
+ */
+export function validatePhoneNumber(phone) {
+  if (!phone || typeof phone !== 'string' && typeof phone !== 'number') {
+    return { isValid: false, error: 'Phone number is required.', cleaned: '' };
+  }
+
+  let raw = String(phone).trim();
+  // Strip country code if present (+91 or 91 with 12 digits)
+  if (raw.startsWith('+91')) {
+    raw = raw.slice(3).trim();
+  } else if (raw.startsWith('91') && raw.replace(/\D/g, '').length === 12) {
+    raw = raw.replace(/\D/g, '').slice(2);
+  } else if (raw.startsWith('0') && raw.replace(/\D/g, '').length === 11) {
+    raw = raw.replace(/\D/g, '').slice(1);
+  }
+
+  const cleaned = raw.replace(/\D/g, '');
+
+  if (cleaned.length === 0) {
+    return { isValid: false, error: 'Please enter a mobile phone number.', cleaned: '' };
+  }
+
+  if (cleaned.length < 10) {
+    return {
+      isValid: false,
+      error: `Phone number is too short (${cleaned.length}/10 digits).`,
+      cleaned,
+    };
+  }
+
+  if (cleaned.length > 10) {
+    return {
+      isValid: false,
+      error: `Phone number has too many digits (${cleaned.length} digits). Please enter exactly 10 digits.`,
+      cleaned,
+    };
+  }
+
+  if (!/^[6-9]/.test(cleaned)) {
+    return {
+      isValid: false,
+      error: `Invalid starting digit "${cleaned[0]}". Indian mobile numbers must begin with 6, 7, 8, or 9.`,
+      cleaned,
+    };
+  }
+
+  return { isValid: true, error: null, cleaned };
+}
+
+/**
  * Sanitizes phone numbers into standard 10-digit mobile format.
  */
 export function cleanPhoneNumber(phone) {
+  const result = validatePhoneNumber(phone);
+  if (result.isValid) return result.cleaned;
   if (!phone) return '';
   return String(phone).replace(/\D/g, '').slice(-10);
 }
 
 /**
+ * Calculates bill-level discount.
+ * Form: subtotal - (subtotal * percent / 100).
+ * Rounds discountAmount to 2 decimal places using half-up rounding.
+ * Clamps discount percent to [0, 100].
+ */
+export function calculateBillDiscount(subtotal, discountPercent) {
+  const s = Math.max(0, parseFloat(subtotal) || 0);
+  const rawP = parseFloat(discountPercent);
+  const p = isNaN(rawP) ? 0 : Math.min(100, Math.max(0, rawP));
+
+  const rawDiscount = s * (p / 100);
+  // Half-up 2 decimal places
+  const discountAmount = Math.round(rawDiscount * 100) / 100;
+  const netTotal = parseFloat(Math.max(0, s - discountAmount).toFixed(2));
+
+  return {
+    subtotal: parseFloat(s.toFixed(2)),
+    discountPercent: p,
+    discountAmount: parseFloat(discountAmount.toFixed(2)),
+    netTotal,
+  };
+}
+
+/**
  * Calculates due added for a purchase entry.
- * due_amount = total_amount - amount_paid
+ * due_amount = max(0, total_amount - amount_paid)
  */
 export function calculateEntryDue(totalAmount, amountPaid) {
   const total = parseFloat(totalAmount) || 0;
   const paid = parseFloat(amountPaid) || 0;
-  return parseFloat((total - paid).toFixed(2));
+  return parseFloat(Math.max(0, total - paid).toFixed(2));
 }
 
 /**
@@ -32,6 +111,7 @@ export function calculatePaymentDue(amountPaid) {
 
 /**
  * Calculates customer running balance across all ledger entries.
+ * Invariant: total_due = SUM(due_amount) across all entries.
  */
 export function calculateCustomerTotalDue(entries = []) {
   const sum = entries.reduce((acc, entry) => {
@@ -59,11 +139,8 @@ export function isPaymentEntry(entry) {
 export function isValidMedicineName(rawName) {
   if (!rawName || typeof rawName !== 'string') return false;
   const trimmed = rawName.trim();
-  // Medicine names must be at least 3 characters and not excessively long
   if (trimmed.length < 3 || trimmed.length > 80) return false;
-  // Must contain letters (not pure numbers or symbols)
   if (!/[a-zA-Z]/.test(trimmed)) return false;
-  // Reject common garbage words/filler typed during quick testing
   const lower = trimmed.toLowerCase();
   const junkList = [
     'it is', 'yu', 'test', 'testing', 'asdf', 'qwerty', 'temp', 'junk',
@@ -103,4 +180,3 @@ export function calculatePurchaseTotal(medicines = []) {
   }, 0);
   return parseFloat(sum.toFixed(2));
 }
-

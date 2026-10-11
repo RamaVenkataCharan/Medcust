@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, FONTS } from '../constants/theme';
 import { addPurchaseEntry, getPastMedicineNames } from '../db/database';
-import { calculateEntryDue, calculateLineTotal, calculatePurchaseTotal } from '../utils/khataLogic';
+import { calculateBillDiscount, calculateEntryDue, calculateLineTotal, calculatePurchaseTotal } from '../utils/khataLogic';
 
 export default function AddPurchaseScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
@@ -28,6 +28,7 @@ export default function AddPurchaseScreen({ route, navigation }) {
     { id: '1', name: '', price: '', discount: '' },
   ]);
   const [pastSuggestions, setPastSuggestions] = useState([]);
+  const [discountPercent, setDiscountPercent] = useState('');
   const [amountPaid, setAmountPaid] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -74,15 +75,16 @@ export default function AddPurchaseScreen({ route, navigation }) {
   };
 
   // Calculations
-  const calculatedTotal = calculatePurchaseTotal(medicines);
+  const subtotal = calculatePurchaseTotal(medicines);
+  const { discountAmount, netTotal } = calculateBillDiscount(subtotal, discountPercent);
   const parsedPaid = parseFloat(amountPaid) || 0;
-  const calculatedDue = calculateEntryDue(calculatedTotal, parsedPaid);
+  const calculatedDue = calculateEntryDue(netTotal, parsedPaid);
 
   const handleSave = () => {
-    // Check if at least one medicine has a name or at least total > 0
+    if (saving) return;
     const validMeds = medicines.filter((m) => m.name.trim().length > 0);
 
-    if (validMeds.length === 0 && calculatedTotal === 0) {
+    if (validMeds.length === 0 && subtotal === 0) {
       Alert.alert('Empty Entry', 'Please enter at least one medicine name or amount.');
       return;
     }
@@ -92,7 +94,10 @@ export default function AddPurchaseScreen({ route, navigation }) {
       addPurchaseEntry({
         customerId,
         medicines: validMeds,
-        totalAmount: calculatedTotal,
+        subtotal,
+        discountPercent: parseFloat(discountPercent) || 0,
+        discountAmount,
+        totalAmount: netTotal,
         amountPaid: parsedPaid,
       });
 
@@ -100,7 +105,6 @@ export default function AddPurchaseScreen({ route, navigation }) {
     } catch (err) {
       console.error('Error saving purchase:', err);
       Alert.alert('Save Failed', err.message || 'Could not save purchase entry');
-    } finally {
       setSaving(false);
     }
   };
@@ -123,9 +127,9 @@ export default function AddPurchaseScreen({ route, navigation }) {
           >
             <Ionicons name="arrow-back" size={26} color={COLORS.textPrimary} />
           </TouchableOpacity>
-          <View style={{ flex: 1 }}>
+          <View>
             <Text style={styles.title}>New Purchase</Text>
-            <Text style={styles.subtitle}>For {customerName}</Text>
+            <Text style={styles.subtitle}>for {customerName}</Text>
           </View>
         </View>
 
@@ -139,23 +143,16 @@ export default function AddPurchaseScreen({ route, navigation }) {
           {/* Quick Suggestions Chips */}
           {pastSuggestions.length > 0 && (
             <View style={styles.suggestionsContainer}>
-              <Text style={styles.suggestionsTitle}>Quick pick recent medicine:</Text>
+              <Text style={styles.suggestionsTitle}>Frequently Purchased:</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsScroll}>
-                {pastSuggestions.slice(0, 10).map((name, i) => (
+                {pastSuggestions.slice(0, 8).map((name, i) => (
                   <TouchableOpacity
                     key={i}
                     style={styles.suggestionChip}
-                    onPress={() => {
-                      // fill the last row or add row
-                      const lastIdx = medicines.length - 1;
-                      if (!medicines[lastIdx].name) {
-                        selectSuggestion(lastIdx, name);
-                      } else {
-                        setMedicines([...medicines, { id: String(Date.now()), name, price: '', discount: '' }]);
-                      }
-                    }}
+                    onPress={() => selectSuggestion(medicines.length - 1, name)}
+                    activeOpacity={0.7}
                   >
-                    <Text style={styles.suggestionChipText}>+ {name}</Text>
+                    <Text style={styles.suggestionChipText}>{name}</Text>
                   </TouchableOpacity>
                 ))}
               </ScrollView>
@@ -164,40 +161,41 @@ export default function AddPurchaseScreen({ route, navigation }) {
 
           {/* Medicines Entry Card */}
           <View style={styles.card}>
-            <Text style={styles.cardHeaderTitle}>Medicines & Items</Text>
+            <Text style={styles.cardHeaderTitle}>Prescribed / Purchased Items</Text>
 
             {medicines.map((item, index) => {
               const lineTotal = calculateLineTotal(item.price, item.discount);
-              const hasDiscount = parseFloat(item.discount) > 0;
+              const hasDiscount = parseFloat(item.discount || 0) > 0;
 
               return (
                 <View key={item.id} style={styles.medicineItemCard}>
-                  {/* Top Tier: Medicine Name & Delete Button */}
+                  {/* Top Row: Name & Remove */}
                   <View style={styles.nameRow}>
                     <TextInput
                       style={styles.medicineInput}
-                      placeholder={`Medicine #${index + 1} (e.g. Paracetamol)`}
+                      placeholder={`Medicine #${index + 1} name`}
                       placeholderTextColor={COLORS.textTertiary}
                       value={item.name}
                       onChangeText={(val) => updateMedicine(item.id, 'name', val)}
-                      autoCapitalize="words"
+                      autoFocus={index === 0}
                     />
-                    <TouchableOpacity
-                      onPress={() => removeMedicineRow(item.id)}
-                      style={styles.deleteRowBtn}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      accessibilityLabel="Remove medicine"
-                    >
-                      <Ionicons name="trash-outline" size={19} color={COLORS.danger} />
-                    </TouchableOpacity>
+                    {medicines.length > 1 && (
+                      <TouchableOpacity
+                        style={styles.deleteRowBtn}
+                        onPress={() => removeMedicineRow(item.id)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Ionicons name="trash-outline" size={18} color={COLORS.danger} />
+                      </TouchableOpacity>
+                    )}
                   </View>
 
-                  {/* Bottom Tier: Price, Discount (₹), and Live Net Total */}
+                  {/* Bottom Row: Price, Rupee Discount, Line Total */}
                   <View style={styles.pricingRow}>
                     <View style={styles.priceInputWrap}>
                       <TextInput
                         style={styles.priceInput}
-                        placeholder="Price (₹)"
+                        placeholder="Price ₹"
                         placeholderTextColor={COLORS.textTertiary}
                         value={item.price}
                         onChangeText={(val) => updateMedicine(item.id, 'price', val)}
@@ -208,7 +206,7 @@ export default function AddPurchaseScreen({ route, navigation }) {
                     <View style={styles.discountInputWrap}>
                       <TextInput
                         style={styles.discountInput}
-                        placeholder="Disc (₹)"
+                        placeholder="Item Disc ₹"
                         placeholderTextColor={COLORS.textTertiary}
                         value={item.discount}
                         onChangeText={(val) => updateMedicine(item.id, 'discount', val)}
@@ -236,11 +234,83 @@ export default function AddPurchaseScreen({ route, navigation }) {
 
           {/* Payment & Due Calculation Card */}
           <View style={styles.card}>
-            <Text style={styles.cardHeaderTitle}>Payment Details</Text>
+            <Text style={styles.cardHeaderTitle}>Payment & Bill Calculation</Text>
 
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Total Purchase:</Text>
-              <Text style={styles.summaryValue}>₹{calculatedTotal.toFixed(2)}</Text>
+              <Text style={styles.summaryLabel}>Items Subtotal:</Text>
+              <Text style={styles.summaryValue}>₹{subtotal.toFixed(2)}</Text>
+            </View>
+
+            {/* Bill-Level Percentage Discount Section */}
+            <View style={styles.discountSection}>
+              <View style={styles.discountHeaderRow}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Ionicons name="pricetag-outline" size={16} color={COLORS.primary} />
+                  <Text style={styles.discountSectionLabel}>Bill Discount (%):</Text>
+                </View>
+                <TextInput
+                  style={styles.discountPercentInput}
+                  placeholder="0"
+                  placeholderTextColor={COLORS.textTertiary}
+                  value={discountPercent}
+                  onChangeText={(val) => {
+                    const clean = val.replace(/[^0-9.]/g, '');
+                    const num = parseFloat(clean);
+                    if (clean === '' || (!isNaN(num) && num >= 0 && num <= 100)) {
+                      setDiscountPercent(clean);
+                    }
+                  }}
+                  keyboardType="numeric"
+                  maxLength={5}
+                />
+              </View>
+
+              {/* Quick Percentage Chips */}
+              <View style={styles.discountChipsRow}>
+                {['5', '10', '15', '20'].map((pct) => (
+                  <TouchableOpacity
+                    key={pct}
+                    style={[
+                      styles.quickDiscountChip,
+                      discountPercent === pct && styles.quickDiscountChipActive,
+                    ]}
+                    onPress={() => setDiscountPercent(discountPercent === pct ? '' : pct)}
+                    activeOpacity={0.7}
+                  >
+                    <Text
+                      style={[
+                        styles.quickDiscountChipText,
+                        discountPercent === pct && styles.quickDiscountChipTextActive,
+                      ]}
+                    >
+                      {pct}%
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+                {discountPercent ? (
+                  <TouchableOpacity
+                    style={styles.clearDiscountBtn}
+                    onPress={() => setDiscountPercent('')}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="close-circle-outline" size={16} color={COLORS.danger} />
+                    <Text style={styles.clearDiscountText}>Clear</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+
+              {discountAmount > 0 && (
+                <View style={styles.discountCalculatedRow}>
+                  <Text style={styles.discountCalculatedLabel}>Discount Deducted:</Text>
+                  <Text style={styles.discountCalculatedValue}>-₹{discountAmount.toFixed(2)}</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Net Payable */}
+            <View style={[styles.summaryRow, styles.netPayableRow]}>
+              <Text style={styles.netPayableLabel}>Net Payable:</Text>
+              <Text style={styles.netPayableValue}>₹{netTotal.toFixed(2)}</Text>
             </View>
 
             <View style={styles.paymentInputRow}>
@@ -468,10 +538,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: SPACING.md,
-    paddingBottom: SPACING.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.surfaceSubtle,
+    marginBottom: SPACING.sm,
+    paddingBottom: SPACING.xs,
   },
   summaryLabel: {
     ...FONTS.body,
@@ -479,13 +547,117 @@ const styles = StyleSheet.create({
   },
   summaryValue: {
     ...FONTS.title,
-    fontSize: 18,
+    fontSize: 17,
+  },
+  discountSection: {
+    backgroundColor: COLORS.surfaceSubtle,
+    padding: SPACING.md,
+    borderRadius: RADIUS.md,
+    marginVertical: SPACING.sm,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  discountHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.sm,
+  },
+  discountSectionLabel: {
+    ...FONTS.bodySecondary,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+  },
+  discountPercentInput: {
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.primaryBorder || '#C7D2FE',
+    borderRadius: RADIUS.sm,
+    paddingHorizontal: SPACING.md,
+    height: 38,
+    width: 80,
+    textAlign: 'right',
+    ...FONTS.header,
+    fontSize: 15,
+  },
+  discountChipsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  quickDiscountChip: {
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 5,
+    borderRadius: RADIUS.pill,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  quickDiscountChipActive: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  quickDiscountChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+  },
+  quickDiscountChipTextActive: {
+    color: COLORS.textInverted,
+  },
+  clearDiscountBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: SPACING.sm,
+  },
+  clearDiscountText: {
+    fontSize: 11,
+    color: COLORS.danger,
+    fontWeight: '500',
+  },
+  discountCalculatedRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: SPACING.sm,
+    paddingTop: SPACING.xs,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+  discountCalculatedLabel: {
+    ...FONTS.subtext,
+    fontWeight: '600',
+    color: COLORS.primary,
+  },
+  discountCalculatedValue: {
+    ...FONTS.header,
+    fontSize: 14,
+    color: COLORS.primary,
+  },
+  netPayableRow: {
+    borderTopWidth: 1,
+    borderTopColor: COLORS.surfaceSubtle,
+    paddingTop: SPACING.sm,
+    marginTop: SPACING.xs,
+  },
+  netPayableLabel: {
+    ...FONTS.header,
+    fontSize: 16,
+    color: COLORS.textPrimary,
+  },
+  netPayableValue: {
+    ...FONTS.title,
+    fontSize: 20,
+    color: COLORS.primary,
   },
   paymentInputRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: SPACING.lg,
+    marginTop: SPACING.xs,
   },
   paymentInputLabel: {
     ...FONTS.body,

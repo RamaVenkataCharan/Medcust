@@ -15,9 +15,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, FONTS } from '../constants/theme';
 import { addCustomer, getCustomerByPhone, restoreCustomer } from '../db/database';
-import { cleanPhoneNumber } from '../utils/khataLogic';
+import { validatePhoneNumber } from '../utils/khataLogic';
 
-export default function AddCustomerScreen({ navigation, route }) {
+export default function AddCustomerScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
   const topInset = Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight || 28) : 24);
 
@@ -31,18 +31,20 @@ export default function AddCustomerScreen({ navigation, route }) {
   const [saving, setSaving] = useState(false);
 
   const handleSave = () => {
+    if (saving) return;
     const trimmedName = name.trim();
-    const cleanPhone = cleanPhoneNumber(phone);
 
     if (!trimmedName) {
       Alert.alert('Name Required', 'Please enter customer name.');
       return;
     }
 
-    if (cleanPhone.length < 10) {
-      Alert.alert('Invalid Phone Number', 'Please enter a valid 10-digit mobile number.');
+    const phoneCheck = validatePhoneNumber(phone);
+    if (!phoneCheck.isValid) {
+      Alert.alert('Invalid Phone Number', phoneCheck.error);
       return;
     }
+    const cleanPhone = phoneCheck.cleaned;
 
     setSaving(true);
     try {
@@ -144,6 +146,7 @@ export default function AddCustomerScreen({ navigation, route }) {
                 onChangeText={setName}
                 autoFocus={!isNumericInitial}
                 autoCapitalize="words"
+                returnKeyType="next"
               />
             </View>
 
@@ -156,8 +159,8 @@ export default function AddCustomerScreen({ navigation, route }) {
                 value={phone}
                 onChangeText={setPhone}
                 keyboardType="phone-pad"
-                maxLength={10}
                 autoFocus={isNumericInitial}
+                returnKeyType="next"
               />
             </View>
 
@@ -170,6 +173,7 @@ export default function AddCustomerScreen({ navigation, route }) {
                 value={village}
                 onChangeText={setVillage}
                 autoCapitalize="words"
+                returnKeyType="next"
               />
             </View>
 

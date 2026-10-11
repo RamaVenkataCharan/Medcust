@@ -17,7 +17,7 @@ import { COLORS, SPACING, RADIUS, FONTS } from '../constants/theme';
 import { searchCustomers, getActiveDriverName } from '../db/database';
 import { exportKhataBackup } from '../services/exportService';
 
-export default function HomeScreen({ navigation }) {
+export default function HomeScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
   const topInset = Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight || 28) : 24);
 
@@ -25,6 +25,25 @@ export default function HomeScreen({ navigation }) {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+
+  // Handle toast message passed via navigation params
+  useEffect(() => {
+    if (route.params?.toastMessage) {
+      setToastMessage(route.params.toastMessage);
+      navigation.setParams({ toastMessage: undefined });
+    }
+  }, [route.params?.toastMessage, navigation]);
+
+  // Auto-dismiss toast
+  useEffect(() => {
+    if (toastMessage) {
+      const timer = setTimeout(() => {
+        setToastMessage('');
+      }, 3500);
+      return () => clearTimeout(timer);
+    }
+  }, [toastMessage]);
 
   useEffect(() => {
     console.log(`[MedTrack] Storage driver active: ${getActiveDriverName()}`);
@@ -60,7 +79,8 @@ export default function HomeScreen({ navigation }) {
 
   const renderCustomerItem = ({ item }) => {
     const totalDue = parseFloat(item.total_due || 0);
-    const hasDue = totalDue > 0;
+    const hasDue = totalDue > 0.001;
+    const isCredit = totalDue < -0.001;
 
     return (
       <TouchableOpacity
@@ -70,9 +90,31 @@ export default function HomeScreen({ navigation }) {
       >
         <View style={styles.cardHeader}>
           <Text style={styles.customerName}>{item.name}</Text>
-          <View style={[styles.dueBadge, hasDue ? styles.dueBadgeAlert : styles.dueBadgeClear]}>
-            <Text style={[styles.dueBadgeText, hasDue ? styles.dueBadgeTextAlert : styles.dueBadgeTextClear]}>
-              {hasDue ? `₹${totalDue.toFixed(0)} due` : 'All clear'}
+          <View
+            style={[
+              styles.dueBadge,
+              hasDue
+                ? styles.dueBadgeAlert
+                : isCredit
+                ? styles.dueBadgeCredit
+                : styles.dueBadgeClear,
+            ]}
+          >
+            <Text
+              style={[
+                styles.dueBadgeText,
+                hasDue
+                  ? styles.dueBadgeTextAlert
+                  : isCredit
+                  ? styles.dueBadgeTextCredit
+                  : styles.dueBadgeTextClear,
+              ]}
+            >
+              {hasDue
+                ? `₹${totalDue.toFixed(0)} due`
+                : isCredit
+                ? `Credit ₹${Math.abs(totalDue).toFixed(0)}`
+                : 'All clear'}
             </Text>
           </View>
         </View>
@@ -103,6 +145,18 @@ export default function HomeScreen({ navigation }) {
         </View>
 
         <View style={styles.headerActions}>
+          {/* Shop & Pharmacist Profile Button */}
+          <TouchableOpacity
+            style={styles.profileButton}
+            onPress={() => navigation.navigate('Settings')}
+            accessibilityLabel="Shop & Pharmacist Profile"
+            activeOpacity={0.7}
+          >
+            <Ionicons name="storefront-outline" size={17} color={COLORS.primary} />
+            <Text style={styles.profileButtonText}>Profile</Text>
+          </TouchableOpacity>
+
+          {/* Backup Button */}
           <TouchableOpacity
             style={styles.exportButton}
             onPress={handleExport}
@@ -119,6 +173,7 @@ export default function HomeScreen({ navigation }) {
             )}
           </TouchableOpacity>
 
+          {/* Settings Button */}
           <TouchableOpacity
             style={styles.settingsButton}
             onPress={() => navigation.navigate('Settings')}
@@ -134,8 +189,8 @@ export default function HomeScreen({ navigation }) {
       <View style={styles.searchContainer}>
         <Ionicons name="search" size={20} color={COLORS.textTertiary} style={styles.searchIcon} />
         <TextInput
-          style={styles.searchInput}
-          placeholder="Search by phone or name..."
+          style={[styles.searchInput, Platform.OS === 'web' && { outlineStyle: 'none' }]}
+          placeholder="Search by phone, name, or village..."
           placeholderTextColor={COLORS.textTertiary}
           value={query}
           onChangeText={setQuery}
@@ -200,6 +255,14 @@ export default function HomeScreen({ navigation }) {
           <Text style={styles.fabText}>+ Add Customer</Text>
         </TouchableOpacity>
       )}
+
+      {/* In-app Toast Banner */}
+      {toastMessage ? (
+        <View style={styles.toastContainer}>
+          <Ionicons name="checkmark-circle" size={18} color={COLORS.textInverted} />
+          <Text style={styles.toastText}>{toastMessage}</Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -230,6 +293,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.sm,
+  },
+  profileButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs + 3,
+    borderRadius: RADIUS.pill,
+    borderWidth: 1,
+    borderColor: COLORS.primaryBorder || '#C7D2FE',
+    gap: 4,
+  },
+  profileButtonText: {
+    ...FONTS.subtext,
+    fontWeight: '600',
+    color: COLORS.primary,
   },
   settingsButton: {
     width: 36,
@@ -328,6 +407,10 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.clearBadgeBg,
     borderColor: COLORS.clearBadgeBorder,
   },
+  dueBadgeCredit: {
+    backgroundColor: COLORS.paymentGreenLight || '#E8F5E9',
+    borderColor: COLORS.paymentGreen || '#2E7D32',
+  },
   dueBadgeText: {
     fontSize: 12,
     fontWeight: '600',
@@ -337,6 +420,9 @@ const styles = StyleSheet.create({
   },
   dueBadgeTextClear: {
     color: COLORS.clearBadgeText,
+  },
+  dueBadgeTextCredit: {
+    color: COLORS.paymentGreen || '#2E7D32',
   },
   cardDetails: {
     flexDirection: 'row',
@@ -403,5 +489,31 @@ const styles = StyleSheet.create({
     ...FONTS.body,
     fontWeight: '600',
     color: COLORS.textInverted,
+  },
+  toastContainer: {
+    position: 'absolute',
+    bottom: 30,
+    left: SPACING.xl,
+    right: SPACING.xl,
+    backgroundColor: '#1E293B',
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.md,
+    borderRadius: RADIUS.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 8,
+    zIndex: 999,
+  },
+  toastText: {
+    ...FONTS.body,
+    color: COLORS.textInverted,
+    fontWeight: '600',
+    flex: 1,
+    fontSize: 13,
   },
 });

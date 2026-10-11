@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   Alert,
   Platform,
   StatusBar,
+  Linking,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -30,6 +31,9 @@ export default function CustomerProfileScreen({ route, navigation }) {
   const [ledger, setLedger] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // In-app Toast state
+  const [toastMessage, setToastMessage] = useState('');
+
   // Payment modal state
   const [payModalVisible, setPayModalVisible] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState('');
@@ -38,6 +42,16 @@ export default function CustomerProfileScreen({ route, navigation }) {
   // Delete modal state
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  // Auto-dismiss toast
+  useEffect(() => {
+    if (toastMessage) {
+      const timer = setTimeout(() => {
+        setToastMessage('');
+      }, 3500);
+      return () => clearTimeout(timer);
+    }
+  }, [toastMessage]);
 
   const handleDeletePress = () => {
     if (!customer) return;
@@ -63,11 +77,18 @@ export default function CustomerProfileScreen({ route, navigation }) {
   };
 
   const confirmDeleteCustomer = () => {
+    if (deleting) return;
     setDeleting(true);
     try {
-      deleteCustomer(customerId);
-      setDeleteModalVisible(false);
-      navigation.goBack();
+      const success = deleteCustomer(customerId);
+      if (success) {
+        setDeleteModalVisible(false);
+        navigation.navigate('Home', {
+          toastMessage: `"${customer.name}" moved to Recycle Bin.`,
+        });
+      } else {
+        Alert.alert('Delete Failed', 'Customer could not be found or removed.');
+      }
     } catch (err) {
       console.error('Error deleting customer:', err);
       Alert.alert('Delete Failed', err.message || 'Could not delete customer.');
@@ -96,21 +117,36 @@ export default function CustomerProfileScreen({ route, navigation }) {
   );
 
   const handleRecordPayment = () => {
+    if (savingPayment) return;
     const amount = parseFloat(paymentAmount);
-    if (!amount || amount <= 0) {
-      Alert.alert('Invalid Amount', 'Please enter a valid payment amount.');
+    if (isNaN(amount) || amount <= 0) {
+      Alert.alert('Invalid Amount', 'Please enter a valid payment amount greater than ₹0.');
       return;
     }
 
     setSavingPayment(true);
     try {
+      const currentDue = parseFloat(customer.total_due || 0);
       addDuePayment({
         customerId,
         amountPaid: amount,
       });
+
       setPaymentAmount('');
       setPayModalVisible(false);
       loadProfile();
+
+      const newDue = currentDue - amount;
+      let balanceStatus = '';
+      if (newDue > 0.001) {
+        balanceStatus = `New balance: ₹${newDue.toFixed(2)} due`;
+      } else if (newDue < -0.001) {
+        balanceStatus = `New balance: Credit ₹${Math.abs(newDue).toFixed(2)}`;
+      } else {
+        balanceStatus = 'New balance: All clear';
+      }
+
+      setToastMessage(`₹${amount.toFixed(2)} payment received (Cash). ${balanceStatus}`);
     } catch (e) {
       Alert.alert('Error', 'Could not record payment: ' + e.message);
     } finally {
@@ -127,12 +163,13 @@ export default function CustomerProfileScreen({ route, navigation }) {
   }
 
   const totalDue = parseFloat(customer.total_due || 0);
-  const hasDue = totalDue > 0;
+  const hasDue = totalDue > 0.001;
+  const isCredit = totalDue < -0.001;
 
   const renderLedgerItem = ({ item }) => {
     const isPaymentOnly = isPaymentEntry(item);
 
-    // ── DISTINCT VISUAL TREATMENT FOR PAYMENTS (User Feedback #1) ──
+    // ── DISTINCT VISUAL TREATMENT FOR PAYMENTS ──
     if (isPaymentOnly) {
       return (
         <View style={styles.paymentCard}>
@@ -157,16 +194,36 @@ export default function CustomerProfileScreen({ route, navigation }) {
     // ── STANDARD PURCHASE ENTRY ──
     const medicines = item.medicines || [];
     const entryDue = parseFloat(item.due_amount || 0);
+    const subtotal = parseFloat(item.subtotal || item.total_amount || 0);
+    const discountPercent = parseFloat(item.discount_percent || 0);
+    const discountAmount = parseFloat(item.discount_amount || 0);
 
     return (
       <View style={styles.purchaseCard}>
         {/* Entry Date & Total */}
         <View style={styles.entryHeaderRow}>
           <Text style={styles.entryDateText}>{formatLocalDateTime(item.entry_date)}</Text>
-          <Text style={styles.purchaseTotalText}>
-            ₹{parseFloat(item.total_amount).toFixed(2)}
-          </Text>
+          <View style={{ alignItems: 'flex-end' }}>
+            <Text style={styles.purchaseTotalText}>
+              ₹{parseFloat(item.total_amount).toFixed(2)}
+            </Text>
+            {discountPercent > 0 && (
+              <Text style={styles.subtotalHint}>
+                Subtotal: ₹{subtotal.toFixed(2)}
+              </Text>
+            )}
+          </View>
         </View>
+
+        {/* Bill-level discount badge if applied */}
+        {discountPercent > 0 && (
+          <View style={styles.billDiscountBanner}>
+            <Ionicons name="pricetag-outline" size={13} color={COLORS.primary} />
+            <Text style={styles.billDiscountBannerText}>
+              Bill Discount: {discountPercent}% off (-₹{discountAmount.toFixed(2)})
+            </Text>
+          </View>
+        )}
 
         {/* Medicine Tags */}
         <View style={styles.medicineList}>
@@ -241,9 +298,14 @@ export default function CustomerProfileScreen({ route, navigation }) {
         <View style={styles.profileTopRow}>
           <View style={{ flex: 1 }}>
             <Text style={styles.headerCustomerName}>{customer.name}</Text>
-            <Text style={styles.headerPhone}>
-              <Ionicons name="call-outline" size={13} color={COLORS.textSecondary} /> {customer.phone_number}
-            </Text>
+            <TouchableOpacity
+              onPress={() => Linking.openURL(`tel:${customer.phone_number}`)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.headerPhone}>
+                <Ionicons name="call-outline" size={13} color={COLORS.primary} /> {customer.phone_number}
+              </Text>
+            </TouchableOpacity>
             {customer.village ? (
               <Text style={styles.headerVillage}>
                 <Ionicons name="location-outline" size={13} color={COLORS.textSecondary} /> {customer.village}
@@ -252,81 +314,120 @@ export default function CustomerProfileScreen({ route, navigation }) {
             ) : null}
           </View>
 
-          {/* Quiet Due Badge */}
-          <View style={[styles.quietDueBadge, hasDue ? styles.quietDueAlert : styles.quietDueClear]}>
-            <Text style={[styles.quietDueText, hasDue ? styles.quietDueTextAlert : styles.quietDueTextClear]}>
-              {hasDue ? `₹${totalDue.toFixed(0)} due` : 'All clear'}
+          {/* Due / Credit Badge */}
+          <View
+            style={[
+              styles.quietDueBadge,
+              hasDue
+                ? styles.quietDueAlert
+                : isCredit
+                ? styles.quietDueCredit
+                : styles.quietDueClear,
+            ]}
+          >
+            <Text
+              style={[
+                styles.quietDueText,
+                hasDue
+                  ? styles.quietDueTextAlert
+                  : isCredit
+                  ? styles.quietDueTextCredit
+                  : styles.quietDueTextClear,
+              ]}
+            >
+              {hasDue
+                ? `₹${totalDue.toFixed(0)} due`
+                : isCredit
+                ? `Credit ₹${Math.abs(totalDue).toFixed(0)}`
+                : 'All clear'}
             </Text>
           </View>
         </View>
 
-        {/* Quick Payment Action (if due exists) */}
-        {hasDue && (
-          <TouchableOpacity
-            style={styles.recordPaymentRow}
-            onPress={() => {
-              setPaymentAmount(String(totalDue));
-              setPayModalVisible(true);
-            }}
-          >
-            <Ionicons name="card-outline" size={16} color={COLORS.paymentGreen} />
-            <Text style={styles.recordPaymentText}>Record Due Payment</Text>
-          </TouchableOpacity>
-        )}
+        {/* Record Due Payment Action Button */}
+        <TouchableOpacity
+          style={styles.recordPaymentRow}
+          onPress={() => setPayModalVisible(true)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="add-circle" size={18} color={COLORS.paymentGreen} />
+          <Text style={styles.recordPaymentText}>Record Due Payment</Text>
+        </TouchableOpacity>
       </View>
 
-      {/* Ledger Section Header */}
+      {/* Ledger History Header */}
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Purchase & Payment History</Text>
-        <Text style={styles.sectionSubtitle}>{ledger.length} record{ledger.length === 1 ? '' : 's'}</Text>
+        <Text style={styles.sectionTitle}>Khata Ledger</Text>
+        <Text style={styles.sectionSubtitle}>{ledger.length} entries</Text>
       </View>
 
-      {/* Ledger Entries List */}
-      {ledger.length === 0 ? (
-        <View style={styles.emptyLedgerContainer}>
-          <Ionicons name="reader-outline" size={44} color={COLORS.borderStrong} />
-          <Text style={styles.emptyLedgerTitle}>No purchases recorded yet</Text>
-          <Text style={styles.emptyLedgerSubtitle}>
-            Tap "+ Add Purchase" below to record medicines bought by this customer.
-          </Text>
-        </View>
-      ) : (
-        <FlatList
-          data={ledger}
-          keyExtractor={(item) => String(item.entry_id)}
-          renderItem={renderLedgerItem}
-          contentContainerStyle={[
-            styles.ledgerListContent,
-            { paddingBottom: Math.max(insets.bottom, SPACING.md) + 80 },
-          ]}
-          showsVerticalScrollIndicator={false}
-        />
-      )}
+      {/* Ledger List */}
+      <FlatList
+        data={ledger}
+        keyExtractor={(item) => String(item.entry_id)}
+        renderItem={renderLedgerItem}
+        contentContainerStyle={styles.ledgerListContent}
+        ListEmptyComponent={
+          <View style={styles.emptyLedgerContainer}>
+            <Ionicons name="receipt-outline" size={48} color={COLORS.textTertiary} />
+            <Text style={styles.emptyLedgerTitle}>No ledger entries yet</Text>
+            <Text style={styles.emptyLedgerSubtitle}>
+              Tap "Add Purchase" below to record medicines or credit balance.
+            </Text>
+          </View>
+        }
+      />
 
-      {/* Bottom Floating Add Purchase Action */}
+      {/* Bottom Floating Action: Add Purchase */}
       <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, SPACING.md) }]}>
         <TouchableOpacity
           style={styles.addPurchaseBtn}
           activeOpacity={0.85}
-          onPress={() => navigation.navigate('AddPurchase', { customerId, customerName: customer.name })}
+          onPress={() =>
+            navigation.navigate('AddPurchase', {
+              customerId: customer.customer_id,
+              customerName: customer.name,
+            })
+          }
         >
-          <Ionicons name="cart-outline" size={22} color={COLORS.textInverted} />
-          <Text style={styles.addPurchaseBtnText}>+ Add Purchase</Text>
+          <Ionicons name="cart-outline" size={20} color={COLORS.textInverted} />
+          <Text style={styles.addPurchaseBtnText}>Add Purchase</Text>
         </TouchableOpacity>
       </View>
+
+      {/* In-app Toast Notification */}
+      {toastMessage ? (
+        <View style={styles.toastContainer}>
+          <Ionicons name="checkmark-circle" size={18} color={COLORS.textInverted} />
+          <Text style={styles.toastText}>{toastMessage}</Text>
+        </View>
+      ) : null}
 
       {/* Record Payment Modal */}
       <Modal visible={payModalVisible} transparent={true} animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Record Payment</Text>
+            <Text style={styles.modalTitle}>Record Due Payment</Text>
             <Text style={styles.modalSubtitle}>
-              Clearing due for {customer.name} (Current due: ₹{totalDue.toFixed(2)})
+              Enter payment received from {customer.name}.
             </Text>
+
+            {hasDue && (
+              <TouchableOpacity
+                style={styles.payFullChip}
+                onPress={() => setPaymentAmount(totalDue.toFixed(2))}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="flash-outline" size={14} color={COLORS.primary} />
+                <Text style={styles.payFullChipText}>
+                  Pay Full Dues: ₹{totalDue.toFixed(2)}
+                </Text>
+              </TouchableOpacity>
+            )}
 
             <TextInput
               style={styles.modalInput}
-              placeholder="Amount received (₹)"
+              placeholder="e.g. 500"
               placeholderTextColor={COLORS.textTertiary}
               value={paymentAmount}
               onChangeText={setPaymentAmount}
@@ -344,7 +445,7 @@ export default function CustomerProfileScreen({ route, navigation }) {
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.modalConfirmBtn}
+                style={[styles.modalConfirmBtn, savingPayment && styles.btnDisabled]}
                 onPress={handleRecordPayment}
                 disabled={savingPayment}
               >
@@ -465,6 +566,7 @@ const styles = StyleSheet.create({
     ...FONTS.bodySecondary,
     fontSize: 13,
     marginBottom: 2,
+    color: COLORS.primary,
   },
   headerVillage: {
     ...FONTS.subtext,
@@ -485,6 +587,10 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.clearBadgeBg,
     borderColor: COLORS.clearBadgeBorder,
   },
+  quietDueCredit: {
+    backgroundColor: COLORS.paymentGreenLight || '#E8F5E9',
+    borderColor: COLORS.paymentGreen || '#2E7D32',
+  },
   quietDueText: {
     fontSize: 13,
     fontWeight: '600',
@@ -494,6 +600,9 @@ const styles = StyleSheet.create({
   },
   quietDueTextClear: {
     color: COLORS.clearBadgeText,
+  },
+  quietDueTextCredit: {
+    color: COLORS.paymentGreen || '#2E7D32',
   },
   recordPaymentRow: {
     flexDirection: 'row',
@@ -544,7 +653,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: SPACING.sm,
+    marginBottom: SPACING.xs,
   },
   entryDateText: {
     ...FONTS.subtext,
@@ -553,6 +662,27 @@ const styles = StyleSheet.create({
   purchaseTotalText: {
     ...FONTS.header,
     fontSize: 16,
+  },
+  subtotalHint: {
+    ...FONTS.subtext,
+    fontSize: 11,
+    color: COLORS.textTertiary,
+  },
+  billDiscountBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: COLORS.primaryLight || '#EEF2FF',
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 3,
+    borderRadius: RADIUS.sm,
+    alignSelf: 'flex-start',
+    marginBottom: SPACING.xs,
+  },
+  billDiscountBannerText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: COLORS.primary,
   },
   medicineList: {
     flexDirection: 'row',
@@ -645,6 +775,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: SPACING.xxxl,
+    paddingTop: SPACING.xxxl,
   },
   emptyLedgerTitle: {
     ...FONTS.header,
@@ -687,6 +818,32 @@ const styles = StyleSheet.create({
     color: COLORS.textInverted,
     fontSize: 16,
   },
+  toastContainer: {
+    position: 'absolute',
+    bottom: 76,
+    left: SPACING.xl,
+    right: SPACING.xl,
+    backgroundColor: '#1E293B',
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.md,
+    borderRadius: RADIUS.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 8,
+    zIndex: 999,
+  },
+  toastText: {
+    ...FONTS.body,
+    color: COLORS.textInverted,
+    fontWeight: '600',
+    flex: 1,
+    fontSize: 13,
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.4)',
@@ -710,7 +867,25 @@ const styles = StyleSheet.create({
     ...FONTS.bodySecondary,
     fontSize: 13,
     marginTop: 4,
-    marginBottom: SPACING.lg,
+    marginBottom: SPACING.md,
+  },
+  payFullChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: COLORS.primaryLight || '#EEF2FF',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 6,
+    borderRadius: RADIUS.pill,
+    alignSelf: 'flex-start',
+    marginBottom: SPACING.md,
+    borderWidth: 1,
+    borderColor: COLORS.primaryBorder || '#C7D2FE',
+  },
+  payFullChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.primary,
   },
   modalInput: {
     backgroundColor: COLORS.surfaceSubtle,
