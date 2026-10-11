@@ -325,8 +325,7 @@ client/src/
   - Quick Settle Chips: `[ ₹100 ]`, `[ ₹200 ]`, `[ ₹500 ]`, `[ Clear All (₹850) ]`.
   - Payment Mode Selector: Radio buttons / Pills for `Cash`, `UPI / GPay`, `Bank Transfer`.
   - Notes Field: Optional reference ID or note.
-  - **Overpayment Safeguard:** If entered amount $> 850$, an alert banner surfaces:  
-    `⚠️ Payment exceeds outstanding balance by ₹X. [ ] Allow Overpayment / Store Credit`.
+  - **Overpayment Safeguard:** If entered amount exceeds current due, an overage alert surfaces with the exact excess amount and requires an explicit confirmation toggle (`[ ] Confirm accepting ₹X as credit`) before Save/Confirm enables. Editing amount back within due immediately resets the toggle.
 
 ### 6.7 Screen 7: Store Dues Dashboard (`DuesReport.jsx`)
 - **Top Metrics Row:**
@@ -339,13 +338,13 @@ client/src/
   - `[ Export CSV ]`: One-click instant CSV download for store auditing.
 - **Data Table:** Interactive rows with click-to-profile navigation.
 
-### 6.8 Screen 8: Recycle Bin & Audit Modal (`RecycleBinModal.jsx`)
+### 6.8 Screen 8: Recycle Bin & Audit Modal (`RecycleBinModal.jsx` & Mobile `RecycleBinScreen.js`)
 - **Protection Guardrails:**
-  - Cashier cannot soft-delete any customer who has an outstanding due balance ($> ₹0$).
-  - Soft-deleted customers remain in the Recycle Bin for **30 days** before being permanently purged by the automatic startup cleaner.
-- **UI Table:**
-  - Displays customer name, phone number, deletion timestamp, and days remaining before permanent purge.
-  - Action buttons: `[ Restore Customer ]` (instant recovery to active ledger) and `[ Permanent Delete ]` (double-confirmation modal).
+  - Deletion is blocked strictly when customer has positive outstanding dues ($> ₹0$). Deletion is explicitly allowed at zero balance (₹0) and at credit balance ($< ₹0$).
+  - Soft-deleted customers remain in the Recycle Bin for **30 days** before being auto-purged on app startup in one atomic cascade transaction (`entry_medicines`, `entries`, `customers`).
+- **UI Table / Cards:**
+  - Displays customer name, phone number, deletion timestamp, and an interactive pill badge displaying live "X days left" (30-day retention countdown).
+  - Action buttons: `[ Restore Customer ]` (instant recovery to active search ledger) and `[ Delete Forever ]` (atomic cascade eradication).
 
 ---
 
@@ -418,16 +417,17 @@ export const COLORS = {
   - Quick Action Buttons:
     - `[ 📞 Call ]`: Launches native Android phone dialer.
     - `[ 💬 WhatsApp ]`: Prepares customer due statement message.
-    - `[ 🗑️ Delete ]`: Guarded soft-delete with validation.
+    - `[ 🗑️ Delete ]`: Guarded soft-delete with validation. Strictly blocks when customer has positive dues ($> ₹0$). Explicitly allows deletion at zero balance (₹0) and at credit balance ($< ₹0$). Visible error path and execution lifecycle traces verify atomic updates.
 - **Segmented History Controller:**
   - Segment 1: `Visits & Purchases`
   - Segment 2: `Payments Received`
 - **Visit Card:**
   - Date stamp formatted to device local timezone.
-  - Expandable medicine list with unit prices.
+  - Expandable medicine list with unit prices and discount chips rendered as `Cifran ₹75 · ₹25 off` to prevent confusion with customer payments.
   - Bill summary: `Total ₹350 • Paid ₹100 • Due ₹250`.
 - **Payment Card:**
   - Renders with soft mint/sage background (`#F0FDF4`) and green checkmark badge: `₹200 Payment Received (Cash)`.
+  - Overpayment Guard: Gated confirmation toggle (`[ ] Confirm accepting ₹X credit`) required before saving if payment exceeds outstanding due.
 - **Sticky Bottom Action Bar:**
   - Full-width button row:
     - Left: `[ Settle Due ]` (Mint Green button).
@@ -527,10 +527,14 @@ sequenceDiagram
 ## 10. Verification, Testing & Sign-off
 
 ### 10.1 Automated Test Suites
-MedTrack maintains a test suite covering financial invariants, autocomplete search, backup integrity, and soft-delete retention:
-- **Suite Location:** `server/tests/core_tests.js`
-- **Coverage:** 60 automated test assertions across 8 functional modules.
-- **Pass Status:** 60 Passed, 0 Failed.
+MedTrack maintains comprehensive automated test suites covering financial invariants, autocomplete search, backup integrity, soft-delete rules, overpayment confirmation gating, and 30-day recycle bin retention:
+- **Server Test Suite:** `server/tests/core_tests.js`
+  - **Coverage:** 60 automated assertions across 8 functional modules.
+  - **Status:** 60 Passed, 0 Failed.
+- **Mobile Test Suite:** `mobile/tests/` (Jest test runner)
+  - **Suites:** 5 suites (`componentAndGuard.test.js`, `recycleBinRetention.test.js`, `usecases_verification.test.js`, `databaseOperations.test.js`, `discountMath.test.js`).
+  - **Coverage:** 43 automated test cases covering delete rule (block only if due > 0, allow 0 & credit), overpayment confirmation toggle & reset, recycle bin 30-day countdown & 31-day auto-purge cascade transaction, per-medicine discount chips (` · ₹X off`), and financial arithmetic.
+  - **Status:** 43 Passed, 0 Failed.
 
 ### 10.2 Document Approval Sign-off
 - **Lead Product Architect:** Antigravity Engineering Lead

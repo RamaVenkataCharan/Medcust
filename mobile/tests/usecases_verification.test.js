@@ -73,7 +73,8 @@ describe('Full Verification of Specific QA Use-Cases (UC)', () => {
 
     // Delete allowed
     const deleted = deleteCustomer(custId);
-    expect(deleted).toBe(true);
+    expect(deleted.success).toBe(true);
+    expect(deleted.changes).toBe(1);
 
     // Hidden from active search
     expect(searchCustomers('QA Zero Balance').length).toBe(0);
@@ -111,11 +112,11 @@ describe('Full Verification of Specific QA Use-Cases (UC)', () => {
 
     // Now delete is allowed
     expect(cust.total_due <= 0.001).toBe(true);
-    expect(deleteCustomer(custId)).toBe(true);
+    expect(deleteCustomer(custId).success).toBe(true);
   });
 
-  // UC-2.4: Credit balance (overpayment)
-  test('UC-2.4: Payment exceeding dues creates credit balance without crash', () => {
+  // UC-2.4: Credit balance (overpayment) & UC-2.5: Delete Customer with Credit Balance
+  test('UC-2.4 & UC-2.5: Payment exceeding dues creates credit balance and customer CAN be deleted', () => {
     const custId = addCustomer({
       phone_number: '9876500003',
       name: 'QA Credit',
@@ -134,6 +135,16 @@ describe('Full Verification of Specific QA Use-Cases (UC)', () => {
     const cust = getCustomerById(custId);
     // Running balance is -₹50 (credit)
     expect(cust.total_due).toBe(-50);
+
+    // Guard evaluation: due > 0 blocks, but due <= 0 (including credit) is ALLOWED
+    const isBlocked = cust.total_due > 0.001;
+    expect(isBlocked).toBe(false);
+
+    // Deletion allowed at credit balance
+    const deleted = deleteCustomer(custId);
+    expect(deleted.success).toBe(true);
+    expect(deleted.changes).toBe(1);
+    expect(searchCustomers('QA Credit').length).toBe(0);
   });
 
   // UC-2.6 & UC-2.7: Restore and Delete Forever

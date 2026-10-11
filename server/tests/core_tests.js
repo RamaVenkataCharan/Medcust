@@ -300,7 +300,7 @@ async function runCoreTests() {
     }
     assert(blockedPositive && blockedPositiveStatus === 409, '1a. Delete blocked with 409 when customer has positive outstanding due');
 
-    // 1b. Credit balance (overpayment)
+    // 1b. Credit balance (overpayment) allows deletion
     const custB = db.prepare('INSERT INTO customers (phone_number, name, village) VALUES (?, ?, ?) RETURNING customer_id')
       .get('9000000002', 'Credit B', 'Village B');
     addEntry({
@@ -310,15 +310,8 @@ async function runCoreTests() {
       medicines: [{ name: 'Test Med', price: 100 }],
     });
     recordPayment({ customerId: custB.customer_id, amount: 50, note: 'Advance credit' });
-    let blockedCredit = false;
-    let blockedCreditStatus = 0;
-    try {
-      softDeleteCustomer(custB.customer_id);
-    } catch (err) {
-      blockedCredit = true;
-      blockedCreditStatus = err.status;
-    }
-    assert(blockedCredit && blockedCreditStatus === 409, '1b. Delete blocked with 409 when customer has credit balance (overpayment)');
+    const deleteCreditResult = softDeleteCustomer(custB.customer_id);
+    assert(deleteCreditResult && deleteCreditResult.success === true, '1b. Delete allowed when customer has credit balance (overpayment)');
 
     // Test 2: Soft delete clear customer (due = 0) -> absent from search & dues report, but entries/payments stay
     const custC = db.prepare('INSERT INTO customers (phone_number, name, village) VALUES (?, ?, ?) RETURNING customer_id')

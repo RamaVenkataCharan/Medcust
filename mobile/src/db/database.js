@@ -192,10 +192,12 @@ export function initDatabase() {
   if (Platform.OS === 'web') {
     const state = getWebState();
     saveWebState(state);
+    purgeExpiredTrash();
     return;
   }
 
   initNativeDatabase();
+  purgeExpiredTrash();
 }
 
 export function searchCustomers(query = '') {
@@ -384,25 +386,35 @@ export function updateCustomer({ customerId, name, village = '', address = '' })
 
 export function deleteCustomer(customerId) {
   const numericId = parseInt(customerId, 10);
-  if (!numericId) return false;
+  if (!numericId) {
+    throw new Error(`Invalid customer ID: "${customerId}"`);
+  }
   const now = getCurrentLocalIso();
 
+  let changes = 0;
   if (Platform.OS === 'web') {
     const state = getWebState();
     const cust = state.customers.find((c) => c.customer_id === numericId);
-    if (!cust) return false;
+    if (!cust) {
+      throw new Error(`Customer with ID ${numericId} not found in database (0 rows changed).`);
+    }
     cust.deleted_at = now;
     saveWebState(state);
-    return true;
+    changes = 1;
+  } else {
+    // Native expo-sqlite
+    const db = getNativeDb();
+    const result = db.runSync(`
+      UPDATE customers SET deleted_at = ? WHERE customer_id = ?;
+    `, [now, numericId]);
+    changes = result.changes || 0;
   }
 
-  // Native expo-sqlite
-  const db = getNativeDb();
-  const result = db.runSync(`
-    UPDATE customers SET deleted_at = ? WHERE customer_id = ?;
-  `, [now, numericId]);
+  if (changes === 0) {
+    throw new Error(`Customer ID ${numericId} update matched 0 rows (customer not found).`);
+  }
 
-  return (result.changes || 0) > 0;
+  return { success: true, changes };
 }
 
 export function getTrashCustomers() {
@@ -484,6 +496,81 @@ export function permanentDeleteCustomer(customerId) {
   });
 
   return true;
+}
+
+/**
+ * Auto-purges customers deleted over 30 days ago in one atomic cascade transaction
+ * (entries, medicine lines, payments).
+ * Accepts an optional simulatedCurrentDate for testing retention boundaries (29-day keep vs 31-day purge).
+ */
+export function purgeExpiredTrash(simulatedCurrentDate = new Date()) {
+  const cutoffTime = new Date(simulatedCurrentDate).getTime() - 30 * 24 * 60 * 60 * 1000;
+  const cutoffIso = new Date(cutoffTime).toISOString();
+
+  if (Platform.OS === 'web') {
+    const state = getWebState();
+    const expiredCustomers = state.customers.filter((c) => {
+      if (!c.deleted_at) return false;
+      const t = new Date(c.deleted_at).getTime();
+      return t < cutoffTime;
+    });
+
+    if (expiredCustomers.length === 0) {
+      return { purgedCount: 0, customerIds: [] };
+    }
+
+    const expiredIds = new Set(expiredCustomers.map((c) => c.customer_id));
+    const customerEntries = state.entries.filter((e) => expiredIds.has(e.customer_id));
+    const entryIds = new Set(customerEntries.map((e) => e.entry_id));
+
+    // Atomically cascade delete in web state
+    state.entry_medicines = state.entry_medicines.filter((m) => !entryIds.has(m.entry_id));
+    state.entries = state.entries.filter((e) => !expiredIds.has(e.customer_id));
+    state.customers = state.customers.filter((c) => !expiredIds.has(c.customer_id));
+
+    saveWebState(state);
+    return { purgedCount: expiredCustomers.length, customerIds: Array.from(expiredIds) };
+  }
+
+  // Native expo-sqlite: atomic cascade delete inside one transaction
+  const db = getNativeDb();
+  let purgedCount = 0;
+  let purgedIds = [];
+
+  db.withTransactionSync(() => {
+    const rows = db.getAllSync(`
+      SELECT customer_id FROM customers 
+      WHERE deleted_at IS NOT NULL AND deleted_at < ?;
+    `, [cutoffIso]);
+
+    purgedIds = rows.map((r) => r.customer_id);
+    purgedCount = purgedIds.length;
+
+    if (purgedCount > 0) {
+      // 1. Cascade delete entry_medicines
+      db.runSync(`
+        DELETE FROM entry_medicines 
+        WHERE entry_id IN (
+          SELECT entry_id FROM entries 
+          WHERE customer_id IN (SELECT customer_id FROM customers WHERE deleted_at IS NOT NULL AND deleted_at < ?)
+        );
+      `, [cutoffIso]);
+
+      // 2. Cascade delete entries (purchases and payment entries)
+      db.runSync(`
+        DELETE FROM entries 
+        WHERE customer_id IN (SELECT customer_id FROM customers WHERE deleted_at IS NOT NULL AND deleted_at < ?);
+      `, [cutoffIso]);
+
+      // 3. Delete customers
+      db.runSync(`
+        DELETE FROM customers 
+        WHERE deleted_at IS NOT NULL AND deleted_at < ?;
+      `, [cutoffIso]);
+    }
+  });
+
+  return { purgedCount, customerIds: purgedIds };
 }
 
 export function getCustomerLedger(customerId) {

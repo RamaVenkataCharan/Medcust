@@ -38,10 +38,12 @@ export default function CustomerProfileScreen({ route, navigation }) {
   const [payModalVisible, setPayModalVisible] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [savingPayment, setSavingPayment] = useState(false);
+  const [confirmOverpayment, setConfirmOverpayment] = useState(false);
 
   // Delete modal state
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [deleteTrace, setDeleteTrace] = useState('');
 
   // Auto-dismiss toast
   useEffect(() => {
@@ -56,8 +58,13 @@ export default function CustomerProfileScreen({ route, navigation }) {
   const handleDeletePress = () => {
     if (!customer) return;
     const currentDue = parseFloat(customer.total_due || 0);
+    console.log(`[DeleteTrace] 1. Press: Delete tapped for "${customer.name}" (ID: ${customerId}), balance: ₹${currentDue.toFixed(2)}`);
+    setDeleteTrace(`1. Press: Due=₹${currentDue.toFixed(2)}`);
 
+    // Block only when due > 0 (strictly positive). Allow delete at 0 and at credit (< 0).
     if (currentDue > 0.001) {
+      console.log(`[DeleteTrace] 2. Guard result: BLOCKED (currentDue=${currentDue.toFixed(2)} > 0)`);
+      setDeleteTrace((prev) => `${prev} -> 2. Guard: BLOCKED (₹${currentDue.toFixed(2)} due)`);
       Alert.alert(
         'Cannot Delete Customer',
         `Clear this customer's due before deleting — currently ₹${currentDue.toFixed(2)} due.`
@@ -65,32 +72,39 @@ export default function CustomerProfileScreen({ route, navigation }) {
       return;
     }
 
-    if (currentDue < -0.001) {
-      Alert.alert(
-        'Cannot Delete Customer',
-        `Clear this customer's credit balance before deleting — currently ₹${Math.abs(currentDue).toFixed(2)} in credit.`
-      );
-      return;
-    }
-
+    console.log(`[DeleteTrace] 2. Guard result: ALLOWED (currentDue=${currentDue.toFixed(2)} <= 0)`);
+    setDeleteTrace((prev) => `${prev} -> 2. Guard: ALLOWED`);
     setDeleteModalVisible(true);
+    console.log('[DeleteTrace] 3. Modal visible: Delete confirmation modal shown');
+    setDeleteTrace((prev) => `${prev} -> 3. Modal Visible`);
   };
 
   const confirmDeleteCustomer = () => {
     if (deleting) return;
     setDeleting(true);
+    console.log(`[DeleteTrace] 4. Confirm tapped: Executing deleteCustomer(${customerId})`);
+    setDeleteTrace((prev) => `${prev} -> 4. Confirm tapped`);
     try {
-      const success = deleteCustomer(customerId);
-      if (success) {
-        setDeleteModalVisible(false);
-        navigation.navigate('Home', {
-          toastMessage: `"${customer.name}" moved to Recycle Bin.`,
-        });
-      } else {
-        Alert.alert('Delete Failed', 'Customer could not be found or removed.');
+      const res = deleteCustomer(customerId);
+      const changesCount = res?.changes ?? (res === true ? 1 : 0);
+      console.log(`[DeleteTrace] 5. SQL changes count: ${changesCount}`);
+      setDeleteTrace((prev) => `${prev} -> 5. SQL Changes: ${changesCount}`);
+
+      if (!res || !res.success || changesCount === 0) {
+        const errorText = res?.error || 'Database updated 0 rows. Customer could not be removed.';
+        console.error('[DeleteTrace] Delete failed:', errorText);
+        Alert.alert('Delete Failed', errorText);
+        return;
       }
+
+      setDeleteModalVisible(false);
+      console.log('[DeleteTrace] 6. Navigation: Navigating to Home');
+      setDeleteTrace((prev) => `${prev} -> 6. Navigating`);
+      navigation.navigate('Home', {
+        toastMessage: `"${customer.name}" moved to Recycle Bin.`,
+      });
     } catch (err) {
-      console.error('Error deleting customer:', err);
+      console.error('[DeleteTrace] Error deleting customer:', err);
       Alert.alert('Delete Failed', err.message || 'Could not delete customer.');
     } finally {
       setDeleting(false);
@@ -116,6 +130,15 @@ export default function CustomerProfileScreen({ route, navigation }) {
     }, [loadProfile])
   );
 
+  const handlePaymentAmountChange = (val) => {
+    setPaymentAmount(val);
+    const parsed = parseFloat(val) || 0;
+    const due = Math.max(0, parseFloat(customer?.total_due || 0));
+    if (parsed <= due) {
+      setConfirmOverpayment(false);
+    }
+  };
+
   const handleRecordPayment = () => {
     if (savingPayment) return;
     const amount = parseFloat(paymentAmount);
@@ -133,6 +156,7 @@ export default function CustomerProfileScreen({ route, navigation }) {
       });
 
       setPaymentAmount('');
+      setConfirmOverpayment(false);
       setPayModalVisible(false);
       loadProfile();
 
@@ -165,6 +189,12 @@ export default function CustomerProfileScreen({ route, navigation }) {
   const totalDue = parseFloat(customer.total_due || 0);
   const hasDue = totalDue > 0.001;
   const isCredit = totalDue < -0.001;
+
+  // Overpayment calculations for payment modal
+  const parsedPaymentAmount = parseFloat(paymentAmount) || 0;
+  const currentDueAmount = Math.max(0, totalDue);
+  const isOverpayment = parsedPaymentAmount > currentDueAmount;
+  const overageAmount = isOverpayment ? parsedPaymentAmount - currentDueAmount : 0;
 
   const renderLedgerItem = ({ item }) => {
     const isPaymentOnly = isPaymentEntry(item);
@@ -238,7 +268,7 @@ export default function CustomerProfileScreen({ route, navigation }) {
                 {price > 0 ? (
                   <Text style={styles.medicinePrice}>
                     ₹{netPrice.toFixed(0)}
-                    {discount > 0 ? ` (-₹${discount.toFixed(0)})` : ''}
+                    {discount > 0 ? ` · ₹${discount.toFixed(0)} off` : ''}
                   </Text>
                 ) : null}
               </View>
@@ -347,7 +377,11 @@ export default function CustomerProfileScreen({ route, navigation }) {
         {/* Record Due Payment Action Button */}
         <TouchableOpacity
           style={styles.recordPaymentRow}
-          onPress={() => setPayModalVisible(true)}
+          onPress={() => {
+            setPaymentAmount('');
+            setConfirmOverpayment(false);
+            setPayModalVisible(true);
+          }}
           activeOpacity={0.7}
         >
           <Ionicons name="add-circle" size={18} color={COLORS.paymentGreen} />
@@ -404,7 +438,12 @@ export default function CustomerProfileScreen({ route, navigation }) {
       ) : null}
 
       {/* Record Payment Modal */}
-      <Modal visible={payModalVisible} transparent={true} animationType="fade">
+      <Modal
+        visible={payModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setPayModalVisible(false)}
+      >
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Record Due Payment</Text>
@@ -415,7 +454,10 @@ export default function CustomerProfileScreen({ route, navigation }) {
             {hasDue && (
               <TouchableOpacity
                 style={styles.payFullChip}
-                onPress={() => setPaymentAmount(totalDue.toFixed(2))}
+                onPress={() => {
+                  setPaymentAmount(totalDue.toFixed(2));
+                  setConfirmOverpayment(false);
+                }}
                 activeOpacity={0.7}
               >
                 <Ionicons name="flash-outline" size={14} color={COLORS.primary} />
@@ -430,10 +472,41 @@ export default function CustomerProfileScreen({ route, navigation }) {
               placeholder="e.g. 500"
               placeholderTextColor={COLORS.textTertiary}
               value={paymentAmount}
-              onChangeText={setPaymentAmount}
+              onChangeText={handlePaymentAmountChange}
               keyboardType="numeric"
               autoFocus={true}
             />
+
+            {/* Overpayment Warning & Confirmation Toggle */}
+            {isOverpayment && (
+              <View style={styles.overpaymentWarningBox}>
+                <View style={styles.overpaymentWarningHeader}>
+                  <Ionicons name="alert-circle" size={18} color="#D97706" />
+                  <Text style={styles.overpaymentWarningTitle}>
+                    Overpayment: ₹{overageAmount.toFixed(2)} extra
+                  </Text>
+                </View>
+                <Text style={styles.overpaymentWarningDesc}>
+                  Amount exceeds current dues of ₹{currentDueAmount.toFixed(2)}. The extra ₹{overageAmount.toFixed(2)} will be credited to this customer's account.
+                </Text>
+                <TouchableOpacity
+                  style={styles.overpaymentToggleRow}
+                  onPress={() => setConfirmOverpayment(!confirmOverpayment)}
+                  activeOpacity={0.7}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: confirmOverpayment }}
+                >
+                  <Ionicons
+                    name={confirmOverpayment ? 'checkbox' : 'square-outline'}
+                    size={22}
+                    color={confirmOverpayment ? COLORS.primary : COLORS.textTertiary}
+                  />
+                  <Text style={styles.overpaymentToggleLabel}>
+                    I confirm accepting ₹{overageAmount.toFixed(2)} as credit
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
             <View style={styles.modalActions}>
               <TouchableOpacity
@@ -445,9 +518,12 @@ export default function CustomerProfileScreen({ route, navigation }) {
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.modalConfirmBtn, savingPayment && styles.btnDisabled]}
+                style={[
+                  styles.modalConfirmBtn,
+                  (savingPayment || (isOverpayment && !confirmOverpayment)) && styles.btnDisabled,
+                ]}
                 onPress={handleRecordPayment}
-                disabled={savingPayment}
+                disabled={savingPayment || (isOverpayment && !confirmOverpayment)}
               >
                 <Text style={styles.modalConfirmBtnText}>
                   {savingPayment ? 'Saving...' : 'Confirm Payment'}
@@ -459,7 +535,12 @@ export default function CustomerProfileScreen({ route, navigation }) {
       </Modal>
 
       {/* Delete Customer Confirmation Modal */}
-      <Modal visible={deleteModalVisible} transparent={true} animationType="fade">
+      <Modal
+        visible={deleteModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setDeleteModalVisible(false)}
+      >
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <View style={styles.deleteModalHeader}>
@@ -472,6 +553,15 @@ export default function CustomerProfileScreen({ route, navigation }) {
             <Text style={styles.deleteModalMessage}>
               Move "{customer.name}" to the Recycle Bin? The customer will be hidden from active search. All purchase entries and payments will remain preserved and can be restored anytime from Settings.
             </Text>
+
+            {deleteTrace ? (
+              <View style={styles.deleteTraceBox}>
+                <Ionicons name="code-slash-outline" size={13} color={COLORS.textTertiary} />
+                <Text style={styles.deleteTraceText}>
+                  Lifecycle: {deleteTrace}
+                </Text>
+              </View>
+            ) : null}
 
             <View style={styles.modalActions}>
               <TouchableOpacity
@@ -961,5 +1051,57 @@ const styles = StyleSheet.create({
   },
   btnDisabled: {
     opacity: 0.6,
+  },
+  overpaymentWarningBox: {
+    backgroundColor: '#FEF3C7',
+    borderRadius: RADIUS.md,
+    padding: SPACING.md,
+    marginTop: SPACING.md,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  overpaymentWarningHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  overpaymentWarningTitle: {
+    ...FONTS.bodyBold,
+    color: '#92400E',
+    fontSize: 13,
+  },
+  overpaymentWarningDesc: {
+    ...FONTS.caption,
+    color: '#B45309',
+    marginBottom: SPACING.sm,
+    lineHeight: 18,
+  },
+  overpaymentToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 4,
+  },
+  overpaymentToggleLabel: {
+    ...FONTS.bodyBold,
+    color: '#78350F',
+    fontSize: 13,
+  },
+  deleteTraceBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F3F4F6',
+    padding: SPACING.sm,
+    borderRadius: RADIUS.sm,
+    marginVertical: SPACING.sm,
+  },
+  deleteTraceText: {
+    ...FONTS.caption,
+    color: COLORS.textTertiary,
+    fontSize: 11,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    flex: 1,
   },
 });

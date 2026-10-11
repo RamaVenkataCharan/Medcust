@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, FONTS } from '../constants/theme';
 import { getTrashCustomers, restoreCustomer, permanentDeleteCustomer } from '../db/database';
 import { formatLocalDateTime } from '../utils/dateUtils';
+import { calculateDaysLeftInBin } from '../utils/khataLogic';
 
 export default function RecycleBinScreen({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -90,6 +91,7 @@ export default function RecycleBinScreen({ navigation }) {
 
   const renderItem = ({ item }) => {
     const deletedTimeStr = item.deleted_at ? formatLocalDateTime(item.deleted_at) : 'Recently deleted';
+    const daysLeft = calculateDaysLeftInBin(item.deleted_at);
 
     return (
       <View style={styles.card}>
@@ -108,14 +110,23 @@ export default function RecycleBinScreen({ navigation }) {
               ) : null}
             </View>
           </View>
-          <View style={styles.binBadge}>
-            <Text style={styles.binBadgeText}>In Bin</Text>
+          <View style={[styles.daysLeftBadge, daysLeft <= 5 ? styles.daysLeftBadgeExpiring : null]}>
+            <Ionicons
+              name={daysLeft <= 5 ? 'alert-circle-outline' : 'hourglass-outline'}
+              size={12}
+              color={daysLeft <= 5 ? COLORS.danger : COLORS.primary}
+            />
+            <Text style={[styles.daysLeftText, daysLeft <= 5 ? styles.daysLeftTextExpiring : null]}>
+              {daysLeft} {daysLeft === 1 ? 'day' : 'days'} left
+            </Text>
           </View>
         </View>
 
         <View style={styles.dateRow}>
           <Ionicons name="time-outline" size={13} color={COLORS.textTertiary} />
-          <Text style={styles.dateText}>Deleted: {deletedTimeStr}</Text>
+          <Text style={styles.dateText}>
+            Deleted: {deletedTimeStr} • {daysLeft} days until auto-purge (30-day window)
+          </Text>
         </View>
 
         <View style={styles.actionRow}>
@@ -299,16 +310,28 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: COLORS.textSecondary,
   },
-  binBadge: {
-    backgroundColor: COLORS.dueBadgeBorder,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 2,
+  daysLeftBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: COLORS.surfaceLight || '#F0FDF4',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 3,
     borderRadius: RADIUS.pill,
+    borderWidth: 1,
+    borderColor: COLORS.primaryLight || '#BBF7D0',
   },
-  binBadgeText: {
-    fontSize: 11,
-    color: COLORS.dueBadgeBg,
+  daysLeftBadgeExpiring: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+  },
+  daysLeftText: {
+    fontSize: 12,
+    color: COLORS.primary,
     fontWeight: '700',
+  },
+  daysLeftTextExpiring: {
+    color: COLORS.danger,
   },
   dateRow: {
     flexDirection: 'row',

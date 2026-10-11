@@ -180,3 +180,31 @@ export function calculatePurchaseTotal(medicines = []) {
   }, 0);
   return parseFloat(sum.toFixed(2));
 }
+
+/**
+ * Calculates remaining days in the 30-day Recycle Bin retention window before permanent auto-purge.
+ */
+export function calculateDaysLeftInBin(deletedAt, currentDate = new Date()) {
+  if (!deletedAt) return 30;
+  const deletedTime = new Date(deletedAt).getTime();
+  const currentTime = new Date(currentDate).getTime();
+  const diffDays = Math.floor((currentTime - deletedTime) / (1000 * 60 * 60 * 24));
+  return Math.max(0, 30 - diffDays);
+}
+
+/**
+ * Formats medicine chip label with discount relabeled to " · ₹X off" (e.g. "Cifran ₹75 · ₹25 off")
+ * to prevent confusion with customer payments.
+ */
+export function formatMedicineDiscountChip(name, netPrice, discount) {
+  const p = parseFloat(netPrice || 0);
+  const d = parseFloat(discount || 0);
+  let pricePart = p > 0 ? `₹${p.toFixed(0)}` : '';
+  if (d > 0) {
+    pricePart = pricePart ? `${pricePart} · ₹${d.toFixed(0)} off` : `₹${d.toFixed(0)} off`;
+  }
+  return {
+    name: name || '',
+    priceText: pricePart,
+  };
+}

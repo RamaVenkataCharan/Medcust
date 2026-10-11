@@ -23,6 +23,14 @@ export default function RecycleBinModal({
   const [pinError, setPinError] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
 
+  const getDaysLeft = (deletedAt) => {
+    if (!deletedAt) return 30;
+    const cleanStr = deletedAt.includes('T') ? deletedAt : deletedAt.replace(' ', 'T') + 'Z';
+    const deletedTime = new Date(cleanStr).getTime() || new Date(deletedAt).getTime();
+    const diffDays = Math.floor((Date.now() - deletedTime) / (1000 * 60 * 60 * 24));
+    return Math.max(0, 30 - diffDays);
+  };
+
   const fetchTrash = async () => {
     try {
       setLoading(true);
@@ -158,9 +166,12 @@ export default function RecycleBinModal({
                         {c.village || '—'}
                       </td>
                       <td className="py-3 px-3 text-slate-500 whitespace-nowrap">
-                        <span title={formatDate(c.deleted_at)}>
+                        <div title={formatDate(c.deleted_at)}>
                           {formatRelativeTime(c.deleted_at)}
-                        </span>
+                        </div>
+                        <div className="text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded inline-block mt-0.5 border border-amber-200/60">
+                          {getDaysLeft(c.deleted_at)} days left
+                        </div>
                       </td>
                       <td className="py-3 px-3 text-right">
                         <div className="inline-flex items-center gap-1.5 justify-end">

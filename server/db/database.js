@@ -312,12 +312,8 @@ function softDeleteCustomer(customerId) {
   }
 
   const balance = getCustomerBalance(customerId);
-  if (Math.abs(balance) > 0.001) {
-    const err = new Error(
-      balance > 0
-        ? `Cannot delete customer with outstanding dues: currently ₹${balance.toFixed(2)} due.`
-        : `Cannot delete customer with credit balance: currently ₹${Math.abs(balance).toFixed(2)} in credit.`
-    );
+  if (balance > 0.001) {
+    const err = new Error(`Cannot delete customer with outstanding dues: currently ₹${balance.toFixed(2)} due.`);
     err.status = 409;
     err.due = balance;
     throw err;

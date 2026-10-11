@@ -20,19 +20,14 @@ const {
 
 describe('Database Operations & Business Logic Tests (Headless Driver)', () => {
   beforeEach(() => {
-    // Reset in-memory web state
-    if (typeof window === 'undefined') {
-      global.window = {
-        localStorage: {
-          store: {},
-          getItem(k) { return this.store[k] || null; },
-          setItem(k, v) { this.store[k] = String(v); },
-          clear() { this.store = {}; },
-        },
-      };
-    } else {
-      window.localStorage.clear();
-    }
+    global.window = {
+      localStorage: {
+        store: {},
+        getItem(k) { return this.store[k] || null; },
+        setItem(k, v) { this.store[k] = String(v); },
+        clear() { this.store = {}; },
+      },
+    };
     initDatabase();
   });
 
@@ -130,7 +125,8 @@ describe('Database Operations & Business Logic Tests (Headless Driver)', () => {
 
     // Soft delete
     const deleted = deleteCustomer(custId);
-    expect(deleted).toBe(true);
+    expect(deleted.success).toBe(true);
+    expect(deleted.changes).toBe(1);
 
     // Must be hidden from active search
     expect(searchCustomers('Zero Due').length).toBe(0);

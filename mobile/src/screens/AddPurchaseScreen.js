@@ -30,6 +30,7 @@ export default function AddPurchaseScreen({ route, navigation }) {
   const [pastSuggestions, setPastSuggestions] = useState([]);
   const [discountPercent, setDiscountPercent] = useState('');
   const [amountPaid, setAmountPaid] = useState('');
+  const [confirmOverpayment, setConfirmOverpayment] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -79,6 +80,17 @@ export default function AddPurchaseScreen({ route, navigation }) {
   const { discountAmount, netTotal } = calculateBillDiscount(subtotal, discountPercent);
   const parsedPaid = parseFloat(amountPaid) || 0;
   const calculatedDue = calculateEntryDue(netTotal, parsedPaid);
+
+  const isOverpayment = parsedPaid > netTotal;
+  const overageAmount = isOverpayment ? parsedPaid - netTotal : 0;
+
+  const handleAmountPaidChange = (val) => {
+    setAmountPaid(val);
+    const parsed = parseFloat(val) || 0;
+    if (parsed <= netTotal) {
+      setConfirmOverpayment(false);
+    }
+  };
 
   const handleSave = () => {
     if (saving) return;
@@ -320,10 +332,41 @@ export default function AddPurchaseScreen({ route, navigation }) {
                 placeholder="0"
                 placeholderTextColor={COLORS.textTertiary}
                 value={amountPaid}
-                onChangeText={setAmountPaid}
+                onChangeText={handleAmountPaidChange}
                 keyboardType="numeric"
               />
             </View>
+
+            {/* Overpayment Warning & Confirmation Toggle */}
+            {isOverpayment && (
+              <View style={styles.overpaymentWarningBox}>
+                <View style={styles.overpaymentWarningHeader}>
+                  <Ionicons name="alert-circle" size={18} color="#D97706" />
+                  <Text style={styles.overpaymentWarningTitle}>
+                    Overpayment: ₹{overageAmount.toFixed(2)} extra
+                  </Text>
+                </View>
+                <Text style={styles.overpaymentWarningDesc}>
+                  Amount paid exceeds the bill total of ₹{netTotal.toFixed(2)}. The extra ₹{overageAmount.toFixed(2)} will be credited to this customer's khata.
+                </Text>
+                <TouchableOpacity
+                  style={styles.overpaymentToggleRow}
+                  onPress={() => setConfirmOverpayment(!confirmOverpayment)}
+                  activeOpacity={0.7}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: confirmOverpayment }}
+                >
+                  <Ionicons
+                    name={confirmOverpayment ? 'checkbox' : 'square-outline'}
+                    size={22}
+                    color={confirmOverpayment ? COLORS.primary : COLORS.textTertiary}
+                  />
+                  <Text style={styles.overpaymentToggleLabel}>
+                    I confirm accepting ₹{overageAmount.toFixed(2)} as advance/credit
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
             {/* Live Due Summary */}
             <View style={styles.duePreviewBox}>
@@ -341,10 +384,13 @@ export default function AddPurchaseScreen({ route, navigation }) {
 
           {/* Save Button */}
           <TouchableOpacity
-            style={[styles.saveBtn, saving && styles.btnDisabled]}
+            style={[
+              styles.saveBtn,
+              (saving || (isOverpayment && !confirmOverpayment)) && styles.btnDisabled,
+            ]}
             activeOpacity={0.85}
             onPress={handleSave}
-            disabled={saving}
+            disabled={saving || (isOverpayment && !confirmOverpayment)}
           >
             <Ionicons name="checkmark-circle-outline" size={22} color={COLORS.textInverted} />
             <Text style={styles.saveBtnText}>{saving ? 'Saving...' : 'Save Purchase Entry'}</Text>
@@ -720,5 +766,41 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: COLORS.textInverted,
     fontSize: 16,
+  },
+  overpaymentWarningBox: {
+    backgroundColor: '#FEF3C7',
+    borderRadius: RADIUS.md,
+    padding: SPACING.md,
+    marginVertical: SPACING.md,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  overpaymentWarningHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  overpaymentWarningTitle: {
+    ...FONTS.bodyBold,
+    color: '#92400E',
+    fontSize: 13,
+  },
+  overpaymentWarningDesc: {
+    ...FONTS.caption,
+    color: '#B45309',
+    marginBottom: SPACING.sm,
+    lineHeight: 18,
+  },
+  overpaymentToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 4,
+  },
+  overpaymentToggleLabel: {
+    ...FONTS.bodyBold,
+    color: '#78350F',
+    fontSize: 13,
   },
 });

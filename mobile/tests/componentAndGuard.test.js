@@ -4,28 +4,103 @@ describe('Delete Customer Blocking Guards', () => {
     if (due > 0.001) {
       return { allowed: false, reason: `Clear this customer's due before deleting — currently ₹${due.toFixed(2)} due.` };
     }
-    if (due < -0.001) {
-      return { allowed: false, reason: `Clear this customer's credit balance before deleting — currently ₹${Math.abs(due).toFixed(2)} in credit.` };
-    }
     return { allowed: true, reason: null };
   }
 
   test('Blocks deletion if customer has positive due (> ₹0.00)', () => {
     const res = evaluateDeleteEligibility(65);
     expect(res.allowed).toBe(false);
-    expect(res.reason).toContain('₹65.00 due');
+    expect(res.reason).toBe("Clear this customer's due before deleting — currently ₹65.00 due.");
   });
 
-  test('Blocks deletion if customer has credit balance (< ₹0.00)', () => {
+  test('Allows deletion if customer has credit balance (< ₹0.00)', () => {
     const res = evaluateDeleteEligibility(-50);
-    expect(res.allowed).toBe(false);
-    expect(res.reason).toContain('₹50.00 in credit');
+    expect(res.allowed).toBe(true);
+    expect(res.reason).toBeNull();
   });
 
   test('Allows deletion if customer has zero due (₹0.00)', () => {
     const res = evaluateDeleteEligibility(0);
     expect(res.allowed).toBe(true);
     expect(res.reason).toBeNull();
+  });
+});
+
+describe('Overpayment Warning and Explicit Confirmation Toggle', () => {
+  function evaluatePaymentState(dueAmount, enteredAmount, confirmToggle = false) {
+    const due = Math.max(0, parseFloat(dueAmount || 0));
+    const paid = parseFloat(enteredAmount || 0);
+    const isOverpayment = paid > due;
+    const overage = isOverpayment ? paid - due : 0;
+    const isSaveEnabled = paid > 0 && (!isOverpayment || confirmToggle);
+
+    return {
+      due,
+      paid,
+      isOverpayment,
+      overage,
+      isSaveEnabled,
+    };
+  }
+
+  test('Payment exceeding due requires explicit confirmation toggle before Save enables', () => {
+    // Current due: ₹50, Paid: ₹70 (Overage: ₹20)
+    const withoutToggle = evaluatePaymentState(50, 70, false);
+    expect(withoutToggle.isOverpayment).toBe(true);
+    expect(withoutToggle.overage).toBe(20);
+    expect(withoutToggle.isSaveEnabled).toBe(false); // Gated
+
+    const withToggle = evaluatePaymentState(50, 70, true);
+    expect(withToggle.isOverpayment).toBe(true);
+    expect(withToggle.isSaveEnabled).toBe(true); // Enabled once checked
+  });
+
+  test('Payment within or equal to due enables Save without requiring toggle', () => {
+    // Current due: ₹100, Paid: ₹100 (Full payment)
+    const exact = evaluatePaymentState(100, 100, false);
+    expect(exact.isOverpayment).toBe(false);
+    expect(exact.overage).toBe(0);
+    expect(exact.isSaveEnabled).toBe(true);
+
+    // Current due: ₹100, Paid: ₹40 (Partial payment)
+    const partial = evaluatePaymentState(100, 40, false);
+    expect(partial.isOverpayment).toBe(false);
+    expect(partial.overage).toBe(0);
+    expect(partial.isSaveEnabled).toBe(true);
+  });
+
+  test('Editing amount back within due resets toggle requirement', () => {
+    let confirmToggle = true; // Was previously checked for overpayment
+    let enteredAmount = 70; // Overpayment on ₹50 due
+
+    // User edits amount back to ₹45
+    enteredAmount = 45;
+    const currentDue = 50;
+    if (enteredAmount <= currentDue) {
+      confirmToggle = false; // Reset toggle
+    }
+
+    const state = evaluatePaymentState(currentDue, enteredAmount, confirmToggle);
+    expect(state.isOverpayment).toBe(false);
+    expect(confirmToggle).toBe(false);
+    expect(state.isSaveEnabled).toBe(true);
+  });
+});
+
+describe('Per-Medicine Discount Chip Relabeling', () => {
+  const { formatMedicineDiscountChip } = require('../src/utils/khataLogic');
+
+  test('Renders "Cifran ₹75 · ₹25 off" instead of bracketed payment format', () => {
+    const chip = formatMedicineDiscountChip('Cifran', 75, 25);
+    expect(chip.name).toBe('Cifran');
+    expect(chip.priceText).toBe('₹75 · ₹25 off');
+    expect(chip.priceText).not.toContain('(-₹25)');
+  });
+
+  test('Renders clean price without discount suffix when discount is 0', () => {
+    const chip = formatMedicineDiscountChip('Paracetamol', 50, 0);
+    expect(chip.priceText).toBe('₹50');
+    expect(chip.priceText).not.toContain('off');
   });
 });
 
