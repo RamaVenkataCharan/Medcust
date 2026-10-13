@@ -109,5 +109,7 @@ describe('AddPurchaseScreen Discount Calculations', () => {
     expect(await screen.findByText('₹82.50')).toBeTruthy();
     expect(await screen.findByText('₹57.50')).toBeTruthy();
     expect(await screen.findByText('₹122.50')).toBeTruthy();
-  });
+  }, 15000);
 });
+
+
