@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, waitFor } from '@testing-library/react-native';
+import { render, waitFor, screen } from '@testing-library/react-native';
 import HomeScreen from '../../src/screens/HomeScreen';
 import AddCustomerScreen from '../../src/screens/AddCustomerScreen';
 import EditCustomerScreen from '../../src/screens/EditCustomerScreen';
@@ -135,6 +135,23 @@ describe('Phase C: Render Smoke Tests', () => {
   describe('SettingsScreen', () => {
     it('renders empty data', () => {
       customRender(<SettingsScreen navigation={mockNavigation} />);
+    });
+
+    it('renders with saved shop profile and expired license badge', async () => {
+      database.getShopProfile.mockReturnValue({
+        shop_name: 'City Meds',
+        shop_license_no: 'DL-999',
+        shop_license_validity: '2020-01-01',
+        shop_phone: '9876543210',
+        pharmacist_name: 'Dr. John',
+        pharmacist_phone: '9876543211',
+        pharmacist_license_validity: '2020-05-01',
+      });
+      await customRender(<SettingsScreen navigation={mockNavigation} />);
+      const shopInput = await screen.findByTestId('input-shop-name');
+      expect(shopInput.props.value).toBe('City Meds');
+      const expiredBadges = await screen.findAllByText('EXPIRED');
+      expect(expiredBadges.length).toBeGreaterThanOrEqual(1);
     });
   });
 

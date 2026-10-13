@@ -248,6 +248,7 @@ export default function SettingsScreen({ navigation }) {
                 style={[styles.textInput, isShopExpired && styles.inputWarning, errors.shop_license_validity && styles.inputError]}
                 placeholder="YYYY-MM-DD"
                 placeholderTextColor={COLORS.textTertiary}
+                keyboardType="numbers-and-punctuation"
                 value={profile.shop_license_validity}
                 onChangeText={(val) => handleProfileChange('shop_license_validity', val)}
                 testID="input-shop-validity"
@@ -318,6 +319,7 @@ export default function SettingsScreen({ navigation }) {
                 style={[styles.textInput, isPharmacistExpired && styles.inputWarning, errors.pharmacist_license_validity && styles.inputError]}
                 placeholder="YYYY-MM-DD"
                 placeholderTextColor={COLORS.textTertiary}
+                keyboardType="numbers-and-punctuation"
                 value={profile.pharmacist_license_validity}
                 onChangeText={(val) => handleProfileChange('pharmacist_license_validity', val)}
                 testID="input-pharmacist-validity"

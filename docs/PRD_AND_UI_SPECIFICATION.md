@@ -1,5 +1,13 @@
 # MedTrack — Product Requirements Document (PRD) & UI Implementation Specifications
 
+> [!IMPORTANT]
+> **REFERENCE ONLY — HISTORICAL SPECIFICATION**
+> This specification document was originally drafted for another branch lineage (`fix/phase-b-2`).
+> **Key differences from this application (`release/mobile` / `feat/finish-medcust`):**
+> 1. **Overpayments**: Overpayment is strictly blocked on mobile (`RecordPaymentScreen.js` and `AddPurchaseScreen.js` block payments exceeding due/total).
+> 2. **Recycle Bin**: No 30-day automatic background purge; customers in the Recycle Bin are retained until manually restored or permanently deleted.
+> 3. **Discounts**: Per-row medicine discounts only (`actual price`, `discount` with `₹` and `%` toggles); no bill-level percentage discount chips.
+
 **Project Name:** MedTrack (Medical Shop Customer & Dues Management System)  
 **Document Version:** 2.1.0  
 **Classification:** Product Specification & Design Architecture  

@@ -67,6 +67,13 @@ describe('Phase E: Data-Layer Sanity', () => {
     const searchRes = await searchCustomers('Delete');
     expect(searchRes.length).toBe(0);
 
+    // 4b. Customer searchable by village name
+    const cust3 = await addCustomer({ phone_number: '7777777777', name: 'Village Resident', village: 'Rampur', address: 'Plot 4' });
+    const villageSearch = await searchCustomers('Rampur');
+    expect(villageSearch.length).toBe(1);
+    expect(villageSearch[0].customer_id).toBe(cust3);
+    expect(villageSearch[0].village).toBe('Rampur');
+
     // 5. Restore verification catches tampered backup
     const backup = await exportAllData();
     const parsed = JSON.parse(JSON.stringify(backup));

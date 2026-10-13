@@ -1,5 +1,13 @@
 # MedTrack Mobile Audit Report (Phase A: Diagnose)
 
+> [!IMPORTANT]
+> **REFERENCE ONLY — HISTORICAL AUDIT DOCUMENT**
+> This audit document was originally written for another branch lineage (`apk-testing` / `fix/phase-b-2`).
+> **Key differences from this application (`release/mobile` / `feat/finish-medcust`):**
+> 1. **Overpayments**: Overpayment is strictly blocked on mobile (`RecordPaymentScreen.js` and `AddPurchaseScreen.js` block payments exceeding due/total).
+> 2. **Recycle Bin**: No 30-day automatic background purge; customers in the Recycle Bin are retained until manually restored or permanently deleted.
+> 3. **Discounts**: Per-row medicine discounts only (`actual price`, `discount` with `₹` and `%` toggles); no bill-level percentage discount chips.
+
 **Date:** 2026-10-11  
 **Target Codebase:** `mobile/`  
 **Base Branch:** `apk-testing` (Matches user's Phone APK build)  
