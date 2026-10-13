@@ -51,3 +51,27 @@ export function isPaymentEntry(entry) {
 
   return (total === 0 && paid > 0) || (hasNoMeds && paid > 0);
 }
+
+/**
+ * Validates if a customer can be deleted (allowed if due <= 0: zero due or credit balance).
+ */
+export function canDeleteCustomer(entries = []) {
+  const totalDue = calculateCustomerTotalDue(entries);
+  return totalDue <= 0;
+}
+
+/**
+ * Pure function to filter customers for web fallback search.
+ */
+export function filterCustomersForSearch(customers, query = '') {
+  const trimmed = String(query).trim().toLowerCase();
+  if (!trimmed) {
+    return customers.filter((c) => !c.deleted_at);
+  }
+  return customers.filter(
+    (c) =>
+      !c.deleted_at &&
+      (String(c.name).toLowerCase().includes(trimmed) ||
+       String(c.phone_number).includes(trimmed))
+  );
+}

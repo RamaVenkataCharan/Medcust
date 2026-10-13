@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback, useRef, memo, useMemo } from '
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   ScrollView,
   Alert,
@@ -11,6 +10,7 @@ import {
   ActivityIndicator,
   StyleSheet
 } from 'react-native';
+import CustomTextInput from '../components/CustomTextInput';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../constants/theme';
@@ -62,7 +62,7 @@ const MedicineTableRow = memo(function MedicineTableRow({
       {index > 0 && <View style={styles.rowDivider} />}
       <View style={styles.tableRow}>
         <View style={styles.colName}>
-          <TextInput
+          <CustomTextInput
             ref={nameRef}
             style={styles.cellInput}
             value={item.name}
@@ -75,12 +75,13 @@ const MedicineTableRow = memo(function MedicineTableRow({
             onSubmitEditing={() => priceRef && priceRef.current && priceRef.current.focus()}
             onFocus={() => onFocus(item.id)}
             accessibilityLabel={`Medicine name ${index + 1}`}
+            testID={`medicineName_${index}`}
             {...TEXT_PROPS}
           />
         </View>
 
         <View style={styles.colPrice}>
-          <TextInput
+          <CustomTextInput
             ref={priceRef}
             style={[styles.cellInput, styles.cellRight]}
             value={item.price}
@@ -94,13 +95,14 @@ const MedicineTableRow = memo(function MedicineTableRow({
             onSubmitEditing={() => discountRef && discountRef.current && discountRef.current.focus()}
             onFocus={() => onFocus(item.id)}
             accessibilityLabel={`Actual price for medicine ${index + 1}`}
+            testID={`medicinePrice_${index}`}
             {...TEXT_PROPS}
           />
         </View>
 
         <View style={styles.colDiscount}>
           <View style={styles.discountCell}>
-            <TextInput
+            <CustomTextInput
               ref={discountRef}
               style={[styles.cellInput, styles.cellCenter, styles.discountInput]}
               value={item.discount}
@@ -114,12 +116,14 @@ const MedicineTableRow = memo(function MedicineTableRow({
               onSubmitEditing={() => nextNameRef && nextNameRef.current && nextNameRef.current.focus()}
               onFocus={() => onFocus(item.id)}
               accessibilityLabel={`Discount for medicine ${index + 1}`}
+              testID={`medicineDiscount_${index}`}
               {...TEXT_PROPS}
             />
             <TouchableOpacity
               style={styles.modeChip}
               onPress={onToggleMode}
               hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              testID={`medicineMode_${index}`}
             >
               <Text {...TEXT_PROPS} style={styles.modeChipText}>{item.discountMode}</Text>
             </TouchableOpacity>
@@ -163,7 +167,7 @@ export default function AddPurchaseScreen({ route, navigation }) {
 
   const r = useResponsive();
   const insets = useSafeAreaInsets();
-  const styles = useMemo(() => makeStyles(r, footerH), [r, footerH]);
+  const styles = useMemo(() => makeStyles(r, footerH, insets), [r, footerH, insets]);
 
   useEffect(() => {
     try {
@@ -317,21 +321,19 @@ export default function AddPurchaseScreen({ route, navigation }) {
 
     setSaving(true);
     try {
-      const medsForDb = validRows.map((m) => {
-        const actual = parseFloat(m.price) || 0;
-        const discR = discountToRupees(m.discount, m.discountMode, actual);
-        const netPrice = fromPaise(Math.max(0, paise(actual) - paise(discR)));
+      const medsForDb = bill.rows.map((r) => {
         return {
-          name: m.name.trim(),
-          price: parseFloat(netPrice.toFixed(2)),
+          name: r.name.trim(),
+          price: r.pricePaise / 100,
+          discount: r.discountPaise / 100,
         };
       });
 
       addPurchaseEntry({
         customerId,
         medicines: medsForDb,
-        totalAmount: parseFloat(grandTotal.toFixed(2)),
-        amountPaid: parseFloat(paidDisplay.toFixed(2)),
+        totalAmount: bill.rupees.grandTotal,
+        amountPaid: bill.rupees.paid,
       });
 
       navigation.goBack();
@@ -341,7 +343,7 @@ export default function AddPurchaseScreen({ route, navigation }) {
     } finally {
       setSaving(false);
     }
-  }, [validRows, grandTotalPaise, parsedPaidPaise, grandTotal, paidDisplay, customerId, navigation]);
+  }, [validRows, grandTotalPaise, parsedPaidPaise, bill, customerId, navigation]);
 
   const renderCurrentDue = () => {
     if (!customer) return null;
@@ -507,9 +509,10 @@ export default function AddPurchaseScreen({ route, navigation }) {
 
             <View style={styles.totalRow}>
               <Text {...TEXT_PROPS} style={styles.totalLabel}>Paid Now</Text>
-              <TextInput
+              <CustomTextInput
                 style={styles.paidNowInput}
                 value={amountPaid}
+                testID="paidNowInput"
                 onChangeText={(val) => {
                   setAmountPaid(sanitiseNumeric(val));
                   setPaidError('');
@@ -573,7 +576,7 @@ const COL_PRICE_FLEX = 1.3;
 const COL_DISCOUNT_FLEX = 1.5;
 const COL_NET_FLEX = 1.3;
 
-const makeStyles = (r, footerH) => StyleSheet.create({
+const makeStyles = (r, footerH, insets) => StyleSheet.create({
   flex: { flex: 1 },
   header: {
     flexDirection: 'row',

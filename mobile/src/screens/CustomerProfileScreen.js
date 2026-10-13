@@ -9,13 +9,14 @@ import {
   Platform,
   UIManager,
   LayoutAnimation,
+  Linking,
   StyleSheet
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../constants/theme';
-import { getCustomerById, getCustomerLedger } from '../db/database';
+import { getCustomerById, getCustomerLedger, softDeleteCustomer } from '../db/database';
 import { formatLocalDateTime, getDateLabel } from '../utils/dateUtils';
 import { isPaymentEntry } from '../utils/khataLogic';
 import { formatINR, formatPhone } from '../utils/formatUtils';
@@ -202,7 +203,7 @@ export default function CustomerProfileScreen({ route, navigation }) {
 
   const r = useResponsive();
   const insets = useSafeAreaInsets();
-  const styles = useMemo(() => makeStyles(r, footerH), [r, footerH]);
+  const styles = useMemo(() => makeStyles(r, footerH, insets), [r, footerH, insets]);
 
   const loadProfile = useCallback(() => {
     try {
@@ -252,29 +253,38 @@ export default function CustomerProfileScreen({ route, navigation }) {
     if (!customer) return;
     const due = parseFloat(customer.total_due || 0);
 
-    if (due !== 0) {
-      const dueLine = due > 0
-          ? `This customer has ₹${due.toFixed(2)} in outstanding dues.`
-          : `This customer has a credit balance of ₹${Math.abs(due).toFixed(2)}.`;
-      Alert.alert('Cannot Delete', `${dueLine}\n\nSettle all dues/credit before deleting this customer.`, [{ text: 'OK' }]);
+    if (due > 0) {
+      Alert.alert(
+        'Cannot Delete',
+        `This customer has ₹${due.toFixed(2)} in outstanding dues.\n\nClear all dues before deleting this customer.`,
+        [{ text: 'OK' }]
+      );
       return;
     }
 
+    const creditNote = due < 0 ? `\n(Customer has ₹${Math.abs(due).toFixed(2)} credit balance)` : '';
+
     Alert.alert(
       'Move to Recycle Bin?',
-      `Move ${customer.name} to the Recycle Bin? You can restore them later.`,
+      `Move ${customer.name} to the Recycle Bin?${creditNote} You can restore them later.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete',
           style: 'destructive',
           onPress: () => {
-            Alert.alert('Delete Not Yet Implemented', 'A soft-delete function has not been added to database.js yet.', [{ text: 'OK' }]);
+            if (softDeleteCustomer(customer.customer_id)) {
+              Alert.alert('Customer Deleted', `${customer.name} was moved to the Recycle Bin.`, [
+                { text: 'OK', onPress: () => navigation.goBack() }
+              ]);
+            } else {
+              Alert.alert('Error', 'Failed to delete customer.');
+            }
           },
         },
       ]
     );
-  }, [customer]);
+  }, [customer, navigation]);
 
   if (loading) {
     return (
@@ -316,10 +326,20 @@ export default function CustomerProfileScreen({ route, navigation }) {
 
         <View style={styles.customerInfo}>
           <Text {...TEXT_PROPS} style={styles.customerName} numberOfLines={2}>{customer.name}</Text>
-          <View style={styles.infoRow}>
-            <Ionicons name="call-outline" size={r.scale(13)} color={COLORS.textSecondary} />
-            <Text {...TEXT_PROPS} style={styles.infoText} numberOfLines={1}> {formatPhone(customer.phone_number)}</Text>
-          </View>
+          <TouchableOpacity
+            style={styles.infoRow}
+            activeOpacity={0.7}
+            onPress={() => {
+              if (customer.phone_number) {
+                Linking.openURL(`tel:${customer.phone_number}`).catch(err => {
+                  console.warn('Could not open phone dialer:', err);
+                });
+              }
+            }}
+          >
+            <Ionicons name="call-outline" size={r.scale(13)} color={COLORS.primary} />
+            <Text {...TEXT_PROPS} style={[styles.infoText, { color: COLORS.primary }]} numberOfLines={1}> {formatPhone(customer.phone_number)}</Text>
+          </TouchableOpacity>
           {customer.village ? (
             <View style={styles.infoRow}>
               <Ionicons name="location-outline" size={r.scale(13)} color={COLORS.textSecondary} />
@@ -380,13 +400,22 @@ export default function CustomerProfileScreen({ route, navigation }) {
 
         <Text {...TEXT_PROPS} style={styles.navTitle} numberOfLines={1}>{customer.name}</Text>
 
-        <TouchableOpacity
-          style={styles.trashBtn}
-          onPress={handleDelete}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <Ionicons name="trash-outline" size={r.scale(22)} color={COLORS.primary} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <TouchableOpacity
+            style={[styles.trashBtn, { marginRight: 16 }]}
+            onPress={() => navigation.navigate('EditCustomer', { customerId: customer.customer_id })}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="pencil" size={r.scale(22)} color={COLORS.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.trashBtn}
+            onPress={handleDelete}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="trash-outline" size={r.scale(22)} color={COLORS.primary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {r.columns === 2 ? (
@@ -443,7 +472,7 @@ export default function CustomerProfileScreen({ route, navigation }) {
   );
 }
 
-const makeStyles = (r, footerH) => StyleSheet.create({
+const makeStyles = (r, footerH, insets) => StyleSheet.create({
   notFoundText: {
     fontSize: r.font(15),
     color: COLORS.textSecondary,

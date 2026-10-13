@@ -53,6 +53,20 @@ function initNativeDatabase() {
     CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone_number);
     CREATE INDEX IF NOT EXISTS idx_entries_customer ON entries(customer_id);
     CREATE INDEX IF NOT EXISTS idx_entry_meds_entry ON entry_medicines(entry_id);
+
+    CREATE TABLE IF NOT EXISTS shop_profile (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      shop_name TEXT DEFAULT '',
+      shop_license_no TEXT DEFAULT '',
+      shop_license_validity TEXT DEFAULT '',
+      shop_phone TEXT DEFAULT '',
+      pharmacist_name TEXT DEFAULT '',
+      pharmacist_phone TEXT DEFAULT '',
+      pharmacist_license_validity TEXT DEFAULT '',
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    INSERT OR IGNORE INTO shop_profile (id) VALUES (1);
   `);
 
   // Idempotent migration: Add 'note' column to entries if it doesn't exist
@@ -72,6 +86,15 @@ function initNativeDatabase() {
       console.warn("Could not add 'discount' column to entry_medicines:", e);
     }
   }
+
+  // Idempotent migration: Add 'deleted_at' column to customers if it doesn't exist
+  try {
+    db.execSync("ALTER TABLE customers ADD COLUMN deleted_at TEXT DEFAULT NULL;");
+  } catch (e) {
+    if (!e.message.includes("duplicate column name")) {
+      console.warn("Could not add 'deleted_at' column to customers:", e);
+    }
+  }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -80,20 +103,39 @@ function initNativeDatabase() {
 const WEB_STORAGE_KEY = 'medtrack_web_db_v1';
 
 function getWebState() {
-  try {
-    const raw = typeof window !== 'undefined' ? window.localStorage.getItem(WEB_STORAGE_KEY) : null;
-    if (raw) return JSON.parse(raw);
-  } catch (e) {
-    console.warn('Could not read web localStorage:', e);
-  }
-  return {
+  const defaultState = {
     customers: [],
     entries: [],
     entry_medicines: [],
+    shop_profile: {
+      id: 1,
+      shop_name: '',
+      shop_license_no: '',
+      shop_license_validity: '',
+      shop_phone: '',
+      pharmacist_name: '',
+      pharmacist_phone: '',
+      pharmacist_license_validity: '',
+      updated_at: '',
+    },
     nextCustomerId: 1,
     nextEntryId: 1,
     nextMedicineId: 1,
   };
+
+  try {
+    const raw = typeof window !== 'undefined' ? window.localStorage.getItem(WEB_STORAGE_KEY) : null;
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (!parsed.shop_profile) {
+        parsed.shop_profile = { ...defaultState.shop_profile };
+      }
+      return parsed;
+    }
+  } catch (e) {
+    console.warn('Could not read web localStorage:', e);
+  }
+  return defaultState;
 }
 
 function saveWebState(state) {
@@ -146,10 +188,12 @@ export function searchCustomers(query = '') {
     const filtered = trimmed
       ? results.filter(
           (c) =>
-            c.name.toLowerCase().includes(trimmed) ||
-            c.phone_number.includes(trimmed)
+            !c.deleted_at &&
+            (c.name.toLowerCase().includes(trimmed) ||
+             c.phone_number.includes(trimmed) ||
+             (c.village && c.village.toLowerCase().includes(trimmed)))
         )
-      : results;
+      : results.filter((c) => !c.deleted_at);
 
     return filtered.sort((a, b) => new Date(b.last_activity) - new Date(a.last_activity));
   }
@@ -171,6 +215,7 @@ export function searchCustomers(query = '') {
         MAX(e.entry_date) AS last_activity
       FROM customers c
       LEFT JOIN entries e ON c.customer_id = e.customer_id
+      WHERE c.deleted_at IS NULL
       GROUP BY c.customer_id
       ORDER BY COALESCE(MAX(e.entry_date), c.created_at) DESC
       LIMIT 100;
@@ -190,11 +235,11 @@ export function searchCustomers(query = '') {
       MAX(e.entry_date) AS last_activity
     FROM customers c
     LEFT JOIN entries e ON c.customer_id = e.customer_id
-    WHERE c.phone_number LIKE ? OR c.name LIKE ?
+    WHERE c.deleted_at IS NULL AND (c.phone_number LIKE ? OR c.name LIKE ? OR c.village LIKE ?)
     GROUP BY c.customer_id
     ORDER BY c.name ASC
     LIMIT 50;
-  `, [pattern, pattern]);
+  `, [pattern, pattern, pattern]);
 }
 
 export function getCustomerById(customerId) {
@@ -229,9 +274,17 @@ export function getCustomerById(customerId) {
       COUNT(e.entry_id) AS total_entries
     FROM customers c
     LEFT JOIN entries e ON c.customer_id = e.customer_id
-    WHERE c.customer_id = ?
+    WHERE c.customer_id = ? AND c.deleted_at IS NULL
     GROUP BY c.customer_id;
   `, [numericId]);
+}
+
+export function getAllCustomers() {
+  if (Platform.OS === 'web') {
+    return getWebState().customers;
+  }
+  const db = getNativeDb();
+  return db.getAllSync(`SELECT * FROM customers;`);
 }
 
 export function getCustomerByPhone(phoneNumber) {
@@ -278,6 +331,54 @@ export function addCustomer({ name, phone_number, village, address }) {
   `, [cleanedPhone, name.trim(), village ? village.trim() : null, address ? address.trim() : null, now]);
 
   return result.lastInsertRowId;
+}
+
+export function updateCustomer(customerId, { name, phone_number, village, address }) {
+  const numericId = parseInt(customerId, 10);
+  const cleanedPhone = cleanPhoneNumber(phone_number);
+  const now = getCurrentLocalIso();
+  
+  if (Platform.OS === 'web') {
+    const state = getWebState();
+    const cust = state.customers.find((c) => c.customer_id === numericId);
+    if (!cust) return false;
+    
+    cust.name = name.trim();
+    cust.phone_number = cleanedPhone;
+    cust.village = village ? village.trim() : null;
+    cust.address = address ? address.trim() : null;
+    
+    if ('updated_at' in cust) {
+      cust.updated_at = now;
+    }
+    
+    saveWebState(state);
+    return true;
+  }
+  
+  const db = getNativeDb();
+  // We only update updated_at if the column exists in schema.
+  // Currently, updated_at doesn't exist, but we can do a PRAGMA table_info check or just run the query.
+  // Actually, we are forbidden from adding updated_at. We should only update it if it exists.
+  let hasUpdatedAt = false;
+  try {
+    const columns = db.getAllSync("PRAGMA table_info(customers);");
+    hasUpdatedAt = columns.some(c => c.name === 'updated_at');
+  } catch(e) {}
+  
+  let q = `UPDATE customers SET name = ?, phone_number = ?, village = ?, address = ?`;
+  let params = [name.trim(), cleanedPhone, village ? village.trim() : null, address ? address.trim() : null];
+  
+  if (hasUpdatedAt) {
+    q += `, updated_at = ?`;
+    params.push(now);
+  }
+  
+  q += ` WHERE customer_id = ?;`;
+  params.push(numericId);
+  
+  const result = db.runSync(q, params);
+  return result.changes > 0;
 }
 
 export function getCustomerLedger(customerId) {
@@ -449,7 +550,96 @@ export function getPastMedicineNames() {
   return rows.map((r) => r.medicine_name);
 }
 
+export function getShopProfile() {
+  const defaultProfile = {
+    id: 1,
+    shop_name: '',
+    shop_license_no: '',
+    shop_license_validity: '',
+    shop_phone: '',
+    pharmacist_name: '',
+    pharmacist_phone: '',
+    pharmacist_license_validity: '',
+    updated_at: '',
+  };
+
+  if (Platform.OS === 'web') {
+    const state = getWebState();
+    return { ...defaultProfile, ...(state.shop_profile || {}) };
+  }
+
+  const db = getNativeDb();
+  try {
+    const row = db.getFirstSync(`SELECT * FROM shop_profile WHERE id = 1;`);
+    return row ? { ...defaultProfile, ...row } : defaultProfile;
+  } catch (e) {
+    console.warn('Could not read shop_profile from SQLite:', e);
+    return defaultProfile;
+  }
+}
+
+export function saveShopProfile(profile = {}) {
+  const sanitized = {
+    shop_name: String(profile.shop_name || '').trim(),
+    shop_license_no: String(profile.shop_license_no || '').trim(),
+    shop_license_validity: String(profile.shop_license_validity || '').trim(),
+    shop_phone: String(profile.shop_phone || '').trim(),
+    pharmacist_name: String(profile.pharmacist_name || '').trim(),
+    pharmacist_phone: String(profile.pharmacist_phone || '').trim(),
+    pharmacist_license_validity: String(profile.pharmacist_license_validity || '').trim(),
+  };
+
+  const now = getCurrentLocalIso();
+
+  if (Platform.OS === 'web') {
+    const state = getWebState();
+    state.shop_profile = {
+      id: 1,
+      ...sanitized,
+      updated_at: now,
+    };
+    saveWebState(state);
+    return state.shop_profile;
+  }
+
+  const db = getNativeDb();
+  db.runSync(`
+    INSERT INTO shop_profile (
+      id,
+      shop_name,
+      shop_license_no,
+      shop_license_validity,
+      shop_phone,
+      pharmacist_name,
+      pharmacist_phone,
+      pharmacist_license_validity,
+      updated_at
+    ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      shop_name = excluded.shop_name,
+      shop_license_no = excluded.shop_license_no,
+      shop_license_validity = excluded.shop_license_validity,
+      shop_phone = excluded.shop_phone,
+      pharmacist_name = excluded.pharmacist_name,
+      pharmacist_phone = excluded.pharmacist_phone,
+      pharmacist_license_validity = excluded.pharmacist_license_validity,
+      updated_at = excluded.updated_at;
+  `, [
+    sanitized.shop_name,
+    sanitized.shop_license_no,
+    sanitized.shop_license_validity,
+    sanitized.shop_phone,
+    sanitized.pharmacist_name,
+    sanitized.pharmacist_phone,
+    sanitized.pharmacist_license_validity,
+    now,
+  ]);
+
+  return getShopProfile();
+}
+
 export function exportAllData() {
+  const shopProfile = getShopProfile();
   if (Platform.OS === 'web') {
     const state = getWebState();
     return {
@@ -458,6 +648,7 @@ export function exportAllData() {
       customers: state.customers,
       entries: state.entries,
       entryMedicines: state.entry_medicines,
+      shop_profile: shopProfile,
     };
   }
 
@@ -473,5 +664,211 @@ export function exportAllData() {
     customers,
     entries,
     entryMedicines,
+    shop_profile: shopProfile,
   };
+}
+
+export async function restoreDatabaseFromJson(data) {
+  const { verifyImport } = require('../utils/importValidator');
+
+  if (Platform.OS === 'web') {
+    // Web fallback (Atomic by definition via localStorage.setItem)
+    const existingState = getWebState();
+    const newState = {
+      customers: data.customers || [],
+      entries: data.entries || [],
+      entry_medicines: data.entryMedicines || [],
+      shop_profile: data.shop_profile || data.shopProfile || existingState.shop_profile,
+      nextCustomerId: Math.max(1, ...(data.customers || []).map(c => c.customer_id)) + 1,
+      nextEntryId: Math.max(1, ...(data.entries || []).map(e => e.entry_id)) + 1,
+      nextMedicineId: Math.max(1, ...(data.entryMedicines || []).map(m => m.id)) + 1,
+    };
+    
+    // Verify first, swap only after passes
+    // Map web keys for verifyImport which expects entryMedicines
+    const actualForVerify = {
+      customers: newState.customers,
+      entries: newState.entries,
+      entryMedicines: newState.entry_medicines
+    };
+    verifyImport(data, actualForVerify);
+    
+    saveWebState(newState);
+    return true;
+  }
+
+  // Native expo-sqlite
+  const db = getNativeDb();
+  
+  await db.withExclusiveTransactionAsync(async () => {
+    // 1. Delete child rows first (replace only)
+    await db.runAsync(`DELETE FROM entry_medicines;`);
+    await db.runAsync(`DELETE FROM entries;`);
+    await db.runAsync(`DELETE FROM customers;`);
+
+    // Restore shop_profile if provided in backup
+    if (data.shop_profile || data.shopProfile) {
+      const sp = data.shop_profile || data.shopProfile;
+      await db.runAsync(`
+        INSERT INTO shop_profile (
+          id, shop_name, shop_license_no, shop_license_validity, shop_phone,
+          pharmacist_name, pharmacist_phone, pharmacist_license_validity, updated_at
+        ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          shop_name = excluded.shop_name,
+          shop_license_no = excluded.shop_license_no,
+          shop_license_validity = excluded.shop_license_validity,
+          shop_phone = excluded.shop_phone,
+          pharmacist_name = excluded.pharmacist_name,
+          pharmacist_phone = excluded.pharmacist_phone,
+          pharmacist_license_validity = excluded.pharmacist_license_validity,
+          updated_at = excluded.updated_at;
+      `, [
+        sp.shop_name || '',
+        sp.shop_license_no || '',
+        sp.shop_license_validity || '',
+        sp.shop_phone || '',
+        sp.pharmacist_name || '',
+        sp.pharmacist_phone || '',
+        sp.pharmacist_license_validity || '',
+        sp.updated_at || getCurrentLocalIso()
+      ]);
+    }
+
+    // 2. Insert customers
+    for (const c of data.customers) {
+      await db.runAsync(
+        `INSERT INTO customers (customer_id, phone_number, name, village, address, created_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [c.customer_id, c.phone_number, c.name, c.village || '', c.address || '', c.created_at || getCurrentLocalIso(), c.deleted_at || null]
+      );
+    }
+
+    // 3. Insert entries (with defaults, so deleted_at can be added later)
+    for (const e of data.entries) {
+      await db.runAsync(
+        `INSERT INTO entries (entry_id, customer_id, entry_date, total_amount, amount_paid, due_amount, note) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [e.entry_id, e.customer_id, e.entry_date || getCurrentLocalIso(), e.total_amount || 0, e.amount_paid || 0, e.due_amount || 0, e.note || null]
+      );
+    }
+
+    // 4. Insert entryMedicines
+    for (const m of data.entryMedicines) {
+      await db.runAsync(
+        `INSERT INTO entry_medicines (id, entry_id, medicine_name, price, discount) VALUES (?, ?, ?, ?, ?)`,
+        [m.id, m.entry_id, m.medicine_name, m.price || 0, m.discount || 0]
+      );
+    }
+
+    // 5. Verify import integrity
+    const actualCustomers = await db.getAllAsync(`SELECT * FROM customers`);
+    const actualEntries = await db.getAllAsync(`SELECT * FROM entries`);
+    const actualEntryMedicines = await db.getAllAsync(`SELECT * FROM entry_medicines`);
+    
+    verifyImport(data, {
+      customers: actualCustomers,
+      entries: actualEntries,
+      entryMedicines: actualEntryMedicines
+    });
+  });
+
+  return true;
+}
+
+// ─────────────────────────────────────────────────────────────
+// RECYCLE BIN OPERATIONS
+// ─────────────────────────────────────────────────────────────
+
+export function getDeletedCustomers() {
+  if (Platform.OS === 'web') {
+    const state = getWebState();
+    return state.customers.filter(c => c.deleted_at).map(c => {
+      const custEntries = state.entries.filter(e => e.customer_id === c.customer_id);
+      return {
+        ...c,
+        total_due: calculateCustomerTotalDue(custEntries),
+        total_entries: custEntries.length
+      };
+    });
+  }
+
+  const db = getNativeDb();
+  return db.getAllSync(`
+    SELECT c.*,
+           ROUND(COALESCE(SUM(e.due_amount), 0), 2) AS total_due,
+           COUNT(e.entry_id) AS total_entries
+    FROM customers c
+    LEFT JOIN entries e ON c.customer_id = e.customer_id
+    WHERE c.deleted_at IS NOT NULL
+    GROUP BY c.customer_id
+    ORDER BY c.deleted_at DESC;
+  `);
+}
+
+export function softDeleteCustomer(customerId) {
+  const numericId = parseInt(customerId, 10);
+  const now = getCurrentLocalIso();
+  
+  if (Platform.OS === 'web') {
+    const state = getWebState();
+    const cust = state.customers.find((c) => c.customer_id === numericId);
+    if (cust) {
+      cust.deleted_at = now;
+      saveWebState(state);
+      return true;
+    }
+    return false;
+  }
+  
+  const db = getNativeDb();
+  const res = db.runSync(`UPDATE customers SET deleted_at = ? WHERE customer_id = ?;`, [now, numericId]);
+  return res.changes > 0;
+}
+
+export function restoreDeletedCustomer(customerId) {
+  const numericId = parseInt(customerId, 10);
+  
+  if (Platform.OS === 'web') {
+    const state = getWebState();
+    const cust = state.customers.find((c) => c.customer_id === numericId);
+    if (cust) {
+      cust.deleted_at = null;
+      saveWebState(state);
+      return true;
+    }
+    return false;
+  }
+  
+  const db = getNativeDb();
+  const res = db.runSync(`UPDATE customers SET deleted_at = NULL WHERE customer_id = ?;`, [numericId]);
+  return res.changes > 0;
+}
+
+export async function permanentlyDeleteCustomer(customerId) {
+  const numericId = parseInt(customerId, 10);
+  
+  if (Platform.OS === 'web') {
+    const state = getWebState();
+    state.customers = state.customers.filter(c => c.customer_id !== numericId);
+    const entryIds = state.entries.filter(e => e.customer_id === numericId).map(e => e.entry_id);
+    state.entries = state.entries.filter(e => e.customer_id !== numericId);
+    state.entry_medicines = state.entry_medicines.filter(m => !entryIds.includes(m.entry_id));
+    saveWebState(state);
+    return true;
+  }
+
+  const db = getNativeDb();
+  await db.withExclusiveTransactionAsync(async () => {
+    // 1. Delete entry medicines
+    await db.runAsync(`
+      DELETE FROM entry_medicines 
+      WHERE entry_id IN (SELECT entry_id FROM entries WHERE customer_id = ?);
+    `, [numericId]);
+    
+    // 2. Delete entries
+    await db.runAsync(`DELETE FROM entries WHERE customer_id = ?;`, [numericId]);
+    
+    // 3. Delete customer
+    await db.runAsync(`DELETE FROM customers WHERE customer_id = ?;`, [numericId]);
+  });
+  return true;
 }

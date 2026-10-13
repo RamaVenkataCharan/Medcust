@@ -41,13 +41,28 @@ router.get('/search', (req, res) => {
 
     const results = rows.map((c) => ({
       ...c,
-      total_due: getCustomerDue(c.customer_id),
+      total_due: Math.max(0, getCustomerDue(c.customer_id) / 100),
     }));
 
     res.json(results);
   } catch (err) {
     console.error('Customer search error:', err);
     res.status(500).json({ error: 'Failed to search customers' });
+  }
+});
+
+/**
+ * GET /api/customers/:id/stats
+ * Total due (computed), last visit, recently bought with frequency
+ */
+router.get('/:id/stats', (req, res) => {
+  try {
+    const customerId = parseInt(req.params.id, 10);
+    const stats = getCustomerStats(customerId);
+    res.json(stats);
+  } catch (err) {
+    console.error('Customer stats error:', err);
+    res.status(500).json({ error: 'Failed to retrieve customer statistics' });
   }
 });
 
@@ -65,7 +80,7 @@ router.get('/:id', (req, res) => {
       return res.status(404).json({ error: 'Customer not found' });
     }
 
-    const totalDue = getCustomerDue(customerId);
+    const totalDue = getCustomerDue(customerId) / 100;
     const stats = getCustomerStats(customerId);
 
     res.json({
@@ -79,21 +94,6 @@ router.get('/:id', (req, res) => {
   } catch (err) {
     console.error('Get customer error:', err);
     res.status(500).json({ error: 'Failed to retrieve customer' });
-  }
-});
-
-/**
- * GET /api/customers/:id/stats
- * Total due (computed), last visit, recently bought with frequency
- */
-router.get('/:id/stats', (req, res) => {
-  try {
-    const customerId = parseInt(req.params.id, 10);
-    const stats = getCustomerStats(customerId);
-    res.json(stats);
-  } catch (err) {
-    console.error('Customer stats error:', err);
-    res.status(500).json({ error: 'Failed to retrieve customer statistics' });
   }
 });
 
@@ -123,7 +123,7 @@ router.post('/', (req, res) => {
         error: `Customer with phone ${cleanPhone} already exists: ${existing.name} (${existing.village || 'No village'})`,
         existingCustomer: {
           ...existing,
-          total_due: getCustomerDue(existing.customer_id),
+          total_due: Math.max(0, getCustomerDue(existing.customer_id) / 100),
         },
       });
     }

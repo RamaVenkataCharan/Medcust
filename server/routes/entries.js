@@ -77,7 +77,7 @@ router.get('/', (req, res) => {
 
     // Fetch line items for each entry
     const getMedsStmt = db.prepare(`
-      SELECT id, entry_id, medicine_name, price
+      SELECT id, entry_id, medicine_name, price, discount
       FROM entry_medicine
       WHERE entry_id = ?
       ORDER BY id ASC
@@ -136,7 +136,7 @@ router.get('/:id', (req, res) => {
     }
 
     const medicines = db.prepare(`
-      SELECT id, medicine_name, price
+      SELECT id, medicine_name, price, discount
       FROM entry_medicine
       WHERE entry_id = ?
       ORDER BY id ASC

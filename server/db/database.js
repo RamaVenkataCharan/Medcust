@@ -62,7 +62,7 @@ function getCustomerDue(customerId) {
     WHERE e.customer_id = ?
   `).get(customerId, customerId);
 
-  return row ? Math.max(0, Math.round(row.total_paise) / 100) : 0;
+  return row ? Math.round(row.total_paise) : 0;
 }
 
 /**
@@ -77,7 +77,7 @@ function addEntry({ customerId, totalAmount, amountPaid, medicines, entryDate })
     throw new Error('Entry requires at least one medicine item');
   }
 
-  const currentDue = getCustomerDue(customerId);
+  const currentDue = getCustomerDue(customerId) / 100;
   const bill = computeBill({
     lines: medicines.map(m => ({ name: m.name || m.medicine_name, price: m.price, discount: m.discount, mode: m.discount_mode || 'amount' })),
     paidNow: amountPaid,
@@ -111,6 +111,15 @@ function addEntry({ customerId, totalAmount, amountPaid, medicines, entryDate })
       throw new Error('Customer not found');
     }
 
+    let finalEntryDate = null;
+    if (entryDate) {
+      try {
+        finalEntryDate = new Date(entryDate).toISOString();
+      } catch (e) {
+        // Fallback to SQLite default if invalid date
+      }
+    }
+
     // 2. Insert entry
     const insertEntryStmt = db.prepare(`
       INSERT INTO entries (customer_id, entry_date, total_amount, amount_paid, due_amount)
@@ -119,7 +128,7 @@ function addEntry({ customerId, totalAmount, amountPaid, medicines, entryDate })
 
     const entryResult = insertEntryStmt.run(
       customerId,
-      entryDate || null,
+      finalEntryDate,
       payload.total_amount,
       payload.amount_paid,
       payload.due_amount
@@ -158,7 +167,7 @@ function addEntry({ customerId, totalAmount, amountPaid, medicines, entryDate })
       totalAmount: payload.total_amount,
       amountPaid: payload.amount_paid,
       dueAmount: payload.due_amount,
-      totalDue: newTotalDue,
+      totalDue: newTotalDue / 100,
       medicines: insertedMeds,
       entryDate: entryDate || new Date().toISOString(),
     };
@@ -183,7 +192,7 @@ function recordPayment({ customerId, amount, note }) {
     throw new Error('Customer not found');
   }
 
-  const previousDue = getCustomerDue(customerId);
+  const previousDue = getCustomerDue(customerId) / 100;
 
   const insertStmt = db.prepare(`
     INSERT INTO payments (customer_id, amount, note)
@@ -194,7 +203,7 @@ function recordPayment({ customerId, amount, note }) {
   const remainingDue = getCustomerDue(customerId);
 
   // Update customer updated_at
-  db.prepare(`UPDATE customers SET updated_at = datetime('now') WHERE customer_id = ?`).run(customerId);
+  db.prepare(`UPDATE customers SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE customer_id = ?`).run(customerId);
 
   return {
     paymentId: result.lastInsertRowid,
@@ -203,7 +212,7 @@ function recordPayment({ customerId, amount, note }) {
     amount: cleanAmount,
     note: note || 'Cash counter settlement',
     previousDue,
-    remainingDue,
+    remainingDue: remainingDue / 100,
     payDate: new Date().toISOString(),
   };
 }
@@ -214,7 +223,7 @@ function recordPayment({ customerId, amount, note }) {
 function getCustomerStats(customerId) {
   const db = getDb();
 
-  const totalDue = getCustomerDue(customerId);
+  const totalDue = getCustomerDue(customerId) / 100;
 
   const lastEntry = db.prepare(`
     SELECT entry_date

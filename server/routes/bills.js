@@ -34,13 +34,13 @@ router.get('/:id', (req, res) => {
     }
 
     const medicines = db.prepare(`
-      SELECT id, medicine_name, price
+      SELECT id, medicine_name, price, discount
       FROM entry_medicine
       WHERE entry_id = ?
       ORDER BY id ASC
     `).all(entryId);
 
-    const totalDue = getCustomerDue(entry.customer_id);
+    const totalDue = getCustomerDue(entry.customer_id) / 100;
 
     const billData = {
       ...entry,

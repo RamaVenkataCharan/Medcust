@@ -2,7 +2,6 @@ import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   ScrollView,
   Alert,
@@ -10,6 +9,7 @@ import {
   Platform,
   StyleSheet
 } from 'react-native';
+import CustomTextInput from '../components/CustomTextInput';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../constants/theme';
@@ -36,15 +36,22 @@ export default function AddCustomerScreen({ navigation, route }) {
 
   const handleSave = () => {
     const trimmedName = name.trim();
-    const cleanPhone = cleanPhoneNumber(phone);
+    const rawDigits = String(phone || '').replace(/\D/g, '');
 
     if (!trimmedName) {
       Alert.alert('Name Required', 'Please enter customer name.');
       return;
     }
 
-    if (cleanPhone.length < 10) {
-      Alert.alert('Invalid Phone Number', 'Please enter a valid 10-digit mobile number.');
+    if (rawDigits.length > 10 && !rawDigits.startsWith('91') && !rawDigits.startsWith('0')) {
+      Alert.alert('Invalid Phone Number', 'Mobile number cannot exceed 10 digits.');
+      return;
+    }
+
+    const cleanPhone = cleanPhoneNumber(phone);
+
+    if (cleanPhone.length < 10 || !/^[6-9]\d{9}$/.test(cleanPhone)) {
+      Alert.alert('Invalid Phone Number', 'Please enter a valid 10-digit mobile number starting with 6, 7, 8, or 9.');
       return;
     }
 
@@ -52,18 +59,37 @@ export default function AddCustomerScreen({ navigation, route }) {
     try {
       const existing = getCustomerByPhone(cleanPhone);
       if (existing) {
-        Alert.alert(
-          'Customer Already Exists',
-          `"${existing.name}" is already registered with this phone number. Opening profile...`,
-          [
-            {
-              text: 'Open Profile',
-              onPress: () => {
-                navigation.replace('CustomerProfile', { customerId: existing.customer_id });
+        if (existing.deleted_at) {
+          Alert.alert(
+            'Number in Recycle Bin',
+            `This number is in the Recycle Bin. Restore it instead?`,
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Restore',
+                onPress: () => {
+                  import('../db/database').then(({ restoreDeletedCustomer }) => {
+                    restoreDeletedCustomer(existing.customer_id);
+                    navigation.replace('CustomerProfile', { customerId: existing.customer_id });
+                  });
+                },
               },
-            },
-          ]
-        );
+            ]
+          );
+        } else {
+          Alert.alert(
+            'Customer Already Exists',
+            `"${existing.name}" is already registered with this phone number. Opening profile...`,
+            [
+              {
+                text: 'Open Profile',
+                onPress: () => {
+                  navigation.replace('CustomerProfile', { customerId: existing.customer_id });
+                },
+              },
+            ]
+          );
+        }
         return;
       }
 
@@ -101,7 +127,7 @@ export default function AddCustomerScreen({ navigation, route }) {
           <View style={styles.formCard}>
             <View style={styles.inputGroup}>
               <Text {...TEXT_PROPS} style={styles.label}>Customer Name *</Text>
-              <TextInput
+              <CustomTextInput
                 style={styles.input}
                 placeholder="e.g. Ramesh Kumar"
                 placeholderTextColor={COLORS.textTertiary}
@@ -115,7 +141,7 @@ export default function AddCustomerScreen({ navigation, route }) {
 
             <View style={styles.inputGroup}>
               <Text {...TEXT_PROPS} style={styles.label}>Phone Number (10 digits) *</Text>
-              <TextInput
+              <CustomTextInput
                 style={styles.input}
                 placeholder="e.g. 9876543210"
                 placeholderTextColor={COLORS.textTertiary}
@@ -130,7 +156,7 @@ export default function AddCustomerScreen({ navigation, route }) {
 
             <View style={styles.inputGroup}>
               <Text {...TEXT_PROPS} style={styles.label}>Village / Locality (Optional)</Text>
-              <TextInput
+              <CustomTextInput
                 style={styles.input}
                 placeholder="e.g. Nizampet"
                 placeholderTextColor={COLORS.textTertiary}
@@ -143,7 +169,7 @@ export default function AddCustomerScreen({ navigation, route }) {
 
             <View style={styles.inputGroup}>
               <Text {...TEXT_PROPS} style={styles.label}>Address / Landmark (Optional)</Text>
-              <TextInput
+              <CustomTextInput
                 style={[styles.input, styles.textArea]}
                 placeholder="e.g. Near Ramalayam Temple"
                 placeholderTextColor={COLORS.textTertiary}

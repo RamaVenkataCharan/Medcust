@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -11,6 +11,10 @@ import AddCustomerScreen from './src/screens/AddCustomerScreen';
 import CustomerProfileScreen from './src/screens/CustomerProfileScreen';
 import AddPurchaseScreen from './src/screens/AddPurchaseScreen';
 import RecordPaymentScreen from './src/screens/RecordPaymentScreen';
+import SettingsScreen from './src/screens/SettingsScreen';
+import RecycleBinScreen from './src/screens/RecycleBinScreen';
+import EditCustomerScreen from './src/screens/EditCustomerScreen';
+import ProfileScreen from './src/screens/ProfileScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -50,6 +54,10 @@ export default function App() {
           <Stack.Screen name="CustomerProfile" component={CustomerProfileScreen} />
           <Stack.Screen name="AddPurchase" component={AddPurchaseScreen} />
           <Stack.Screen name="RecordPayment" component={RecordPaymentScreen} />
+          <Stack.Screen name="Profile" component={ProfileScreen} />
+          <Stack.Screen name="Settings" component={SettingsScreen} />
+          <Stack.Screen name="RecycleBin" component={RecycleBinScreen} />
+          <Stack.Screen name="EditCustomer" component={EditCustomerScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>
