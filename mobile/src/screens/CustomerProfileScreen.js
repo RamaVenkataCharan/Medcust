@@ -9,6 +9,7 @@ import {
   Platform,
   UIManager,
   LayoutAnimation,
+  Linking,
   StyleSheet
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
@@ -252,17 +253,20 @@ export default function CustomerProfileScreen({ route, navigation }) {
     if (!customer) return;
     const due = parseFloat(customer.total_due || 0);
 
-    if (due !== 0) {
-      const dueLine = due > 0
-          ? `This customer has ₹${due.toFixed(2)} in outstanding dues.`
-          : `This customer has a credit balance of ₹${Math.abs(due).toFixed(2)}.`;
-      Alert.alert('Cannot Delete', `${dueLine}\n\nSettle all dues/credit before deleting this customer.`, [{ text: 'OK' }]);
+    if (due > 0) {
+      Alert.alert(
+        'Cannot Delete',
+        `This customer has ₹${due.toFixed(2)} in outstanding dues.\n\nClear all dues before deleting this customer.`,
+        [{ text: 'OK' }]
+      );
       return;
     }
 
+    const creditNote = due < 0 ? `\n(Customer has ₹${Math.abs(due).toFixed(2)} credit balance)` : '';
+
     Alert.alert(
       'Move to Recycle Bin?',
-      `Move ${customer.name} to the Recycle Bin? You can restore them later.`,
+      `Move ${customer.name} to the Recycle Bin?${creditNote} You can restore them later.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -270,7 +274,9 @@ export default function CustomerProfileScreen({ route, navigation }) {
           style: 'destructive',
           onPress: () => {
             if (softDeleteCustomer(customer.customer_id)) {
-              navigation.goBack();
+              Alert.alert('Customer Deleted', `${customer.name} was moved to the Recycle Bin.`, [
+                { text: 'OK', onPress: () => navigation.goBack() }
+              ]);
             } else {
               Alert.alert('Error', 'Failed to delete customer.');
             }
@@ -278,7 +284,7 @@ export default function CustomerProfileScreen({ route, navigation }) {
         },
       ]
     );
-  }, [customer]);
+  }, [customer, navigation]);
 
   if (loading) {
     return (
@@ -320,10 +326,20 @@ export default function CustomerProfileScreen({ route, navigation }) {
 
         <View style={styles.customerInfo}>
           <Text {...TEXT_PROPS} style={styles.customerName} numberOfLines={2}>{customer.name}</Text>
-          <View style={styles.infoRow}>
-            <Ionicons name="call-outline" size={r.scale(13)} color={COLORS.textSecondary} />
-            <Text {...TEXT_PROPS} style={styles.infoText} numberOfLines={1}> {formatPhone(customer.phone_number)}</Text>
-          </View>
+          <TouchableOpacity
+            style={styles.infoRow}
+            activeOpacity={0.7}
+            onPress={() => {
+              if (customer.phone_number) {
+                Linking.openURL(`tel:${customer.phone_number}`).catch(err => {
+                  console.warn('Could not open phone dialer:', err);
+                });
+              }
+            }}
+          >
+            <Ionicons name="call-outline" size={r.scale(13)} color={COLORS.primary} />
+            <Text {...TEXT_PROPS} style={[styles.infoText, { color: COLORS.primary }]} numberOfLines={1}> {formatPhone(customer.phone_number)}</Text>
+          </TouchableOpacity>
           {customer.village ? (
             <View style={styles.infoRow}>
               <Ionicons name="location-outline" size={r.scale(13)} color={COLORS.textSecondary} />

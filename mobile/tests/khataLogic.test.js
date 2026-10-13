@@ -21,16 +21,16 @@ describe('canDeleteCustomer', () => {
     expect(canDeleteCustomer(entries)).toBe(true);
   });
 
-  it('returns false for credit balance', () => {
+  it('returns true for credit balance', () => {
     const entries = [{ due_amount: 50 }, { due_amount: -60 }];
     expect(calculateCustomerTotalDue(entries)).toBe(-10);
-    expect(canDeleteCustomer(entries)).toBe(false);
+    expect(canDeleteCustomer(entries)).toBe(true);
   });
 
-  it('returns false for a customer with only payment rows (credit)', () => {
+  it('returns true for a customer with only payment rows (credit)', () => {
     const entries = [{ due_amount: -20 }, { due_amount: -30 }];
     expect(calculateCustomerTotalDue(entries)).toBe(-50);
-    expect(canDeleteCustomer(entries)).toBe(false);
+    expect(canDeleteCustomer(entries)).toBe(true);
   });
   
   it('returns true for a customer with only zero-due payment rows', () => {

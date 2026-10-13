@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import { View, Text, FlatList, TouchableOpacity, Alert, StyleSheet } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, Alert, Modal, StyleSheet } from 'react-native';
 import CustomTextInput from '../components/CustomTextInput';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,6 +11,9 @@ import ScreenContainer from '../components/ScreenContainer';
 
 export default function RecycleBinScreen({ navigation }) {
   const [customers, setCustomers] = useState([]);
+  const [customerToDelete, setCustomerToDelete] = useState(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deletingForever, setDeletingForever] = useState(false);
   
   const r = useResponsive();
   const insets = useSafeAreaInsets();
@@ -35,30 +38,28 @@ export default function RecycleBinScreen({ navigation }) {
   };
 
   const handleDeleteForever = (customer) => {
-    Alert.prompt(
-      'Permanent Delete',
-      `Type DELETE to permanently remove ${customer.name} and their ${customer.total_entries || 0} records. This cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async (text) => {
-            if (text === 'DELETE') {
-              try {
-                await permanentlyDeleteCustomer(customer.customer_id);
-                loadData();
-              } catch (e) {
-                Alert.alert('Error', 'Failed to delete customer permanently.');
-              }
-            } else {
-              Alert.alert('Error', 'You must type DELETE exactly.');
-            }
-          }
-        }
-      ],
-      'plain-text'
-    );
+    setCustomerToDelete(customer);
+    setDeleteConfirmText('');
+  };
+
+  const handleConfirmPermanentDelete = async () => {
+    if (!customerToDelete) return;
+    if (deleteConfirmText.trim() !== 'DELETE') {
+      Alert.alert('Error', 'You must type DELETE exactly.');
+      return;
+    }
+    setDeletingForever(true);
+    try {
+      await permanentlyDeleteCustomer(customerToDelete.customer_id);
+      const name = customerToDelete.name;
+      setCustomerToDelete(null);
+      loadData();
+      Alert.alert('Permanently Deleted', `${name} has been removed.`);
+    } catch (e) {
+      Alert.alert('Error', 'Failed to delete customer permanently.');
+    } finally {
+      setDeletingForever(false);
+    }
   };
 
   const renderItem = ({ item }) => {
@@ -111,6 +112,60 @@ export default function RecycleBinScreen({ navigation }) {
           </View>
         }
       />
+
+      {/* Cross-platform Permanent Delete Modal */}
+      {customerToDelete && (
+        <Modal
+          visible={true}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setCustomerToDelete(null)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalCard}>
+              <View style={styles.modalHeader}>
+                <Ionicons name="warning" size={r.scale(28)} color={COLORS.danger} />
+                <Text {...TEXT_PROPS} style={styles.modalTitle}>Permanent Delete</Text>
+              </View>
+              <Text {...TEXT_PROPS} style={styles.modalMessage}>
+                Permanently delete <Text style={{ fontWeight: 'bold' }}>{customerToDelete.name}</Text> and their {customerToDelete.total_entries || 0} records? This cannot be undone.
+              </Text>
+              <Text {...TEXT_PROPS} style={styles.modalPrompt}>
+                Type <Text style={{ fontWeight: 'bold', color: COLORS.danger }}>DELETE</Text> to confirm:
+              </Text>
+              <CustomTextInput
+                style={styles.modalInput}
+                placeholder="DELETE"
+                placeholderTextColor={COLORS.textTertiary}
+                value={deleteConfirmText}
+                onChangeText={setDeleteConfirmText}
+                autoCapitalize="characters"
+                autoFocus={true}
+              />
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={styles.modalCancelBtn}
+                  onPress={() => setCustomerToDelete(null)}
+                >
+                  <Text {...TEXT_PROPS} style={styles.modalCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.modalDeleteBtn,
+                    deleteConfirmText.trim() !== 'DELETE' && styles.modalDeleteBtnDisabled
+                  ]}
+                  disabled={deleteConfirmText.trim() !== 'DELETE' || deletingForever}
+                  onPress={handleConfirmPermanentDelete}
+                >
+                  <Text {...TEXT_PROPS} style={styles.modalDeleteText}>
+                    {deletingForever ? 'Deleting...' : 'Delete Forever'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
     </ScreenContainer>
   );
 }
@@ -198,5 +253,87 @@ const makeStyles = (r, insets) => StyleSheet.create({
     fontSize: r.font(16),
     color: COLORS.textSecondary,
     marginTop: r.scale(16),
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: r.moderate(20),
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: r.scale(400),
+    backgroundColor: COLORS.surface,
+    borderRadius: r.scale(12),
+    padding: r.moderate(20),
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: r.scale(8),
+    marginBottom: r.scale(12),
+  },
+  modalTitle: {
+    fontSize: r.font(18),
+    fontWeight: '700',
+    color: COLORS.danger,
+  },
+  modalMessage: {
+    fontSize: r.font(14),
+    color: COLORS.textPrimary,
+    lineHeight: 20,
+    marginBottom: r.scale(12),
+  },
+  modalPrompt: {
+    fontSize: r.font(13),
+    color: COLORS.textSecondary,
+    marginBottom: r.scale(8),
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: r.scale(6),
+    paddingHorizontal: r.moderate(12),
+    paddingVertical: r.moderate(10),
+    fontSize: r.font(15),
+    color: COLORS.textPrimary,
+    marginBottom: r.scale(16),
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: r.scale(12),
+  },
+  modalCancelBtn: {
+    paddingVertical: r.moderate(8),
+    paddingHorizontal: r.moderate(16),
+    borderRadius: r.scale(6),
+  },
+  modalCancelText: {
+    fontSize: r.font(14),
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+  },
+  modalDeleteBtn: {
+    backgroundColor: COLORS.danger,
+    paddingVertical: r.moderate(8),
+    paddingHorizontal: r.moderate(16),
+    borderRadius: r.scale(6),
+  },
+  modalDeleteBtnDisabled: {
+    opacity: 0.5,
+  },
+  modalDeleteText: {
+    fontSize: r.font(14),
+    fontWeight: '600',
+    color: '#FFF',
   },
 });

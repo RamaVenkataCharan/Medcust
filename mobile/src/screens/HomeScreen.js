@@ -13,7 +13,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../constants/theme';
-import { searchCustomers, getActiveDriverName } from '../db/database';
+import { searchCustomers, getActiveDriverName, getShopProfile } from '../db/database';
 import { exportKhataBackup } from '../services/exportService';
 import { useResponsive, TEXT_PROPS } from '../utils/responsive';
 import ScreenContainer from '../components/ScreenContainer';
@@ -22,6 +22,7 @@ export default function HomeScreen({ navigation }) {
   const [query, setQuery] = useState('');
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [shopName, setShopName] = useState('');
   const [exporting, setExporting] = useState(false);
 
   const r = useResponsive();
@@ -41,6 +42,13 @@ export default function HomeScreen({ navigation }) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
+
+    try {
+      const sp = getShopProfile();
+      if (sp?.shop_name) {
+        setShopName(sp.shop_name);
+      }
+    } catch (e) {}
 
     // Fire immediately if query is cleared or skipDebounce is true
     if (q === '' || skipDebounce) {
@@ -96,6 +104,7 @@ export default function HomeScreen({ navigation }) {
   const renderCustomerItem = ({ item }) => {
     const totalDue = parseFloat(item.total_due || 0);
     const hasDue = totalDue > 0;
+    const hasCredit = totalDue < 0;
 
     return (
       <TouchableOpacity
@@ -105,9 +114,15 @@ export default function HomeScreen({ navigation }) {
       >
         <View style={styles.cardHeader}>
           <Text {...TEXT_PROPS} style={styles.customerName} numberOfLines={1}>{item.name}</Text>
-          <View style={[styles.dueBadge, hasDue ? styles.dueBadgeAlert : styles.dueBadgeClear]}>
-            <Text {...TEXT_PROPS} style={[styles.dueBadgeText, hasDue ? styles.dueBadgeTextAlert : styles.dueBadgeTextClear]}>
-              {hasDue ? `₹${totalDue.toFixed(0)} due` : 'All clear'}
+          <View style={[
+            styles.dueBadge,
+            hasDue ? styles.dueBadgeAlert : hasCredit ? styles.dueBadgeCredit : styles.dueBadgeClear
+          ]}>
+            <Text {...TEXT_PROPS} style={[
+              styles.dueBadgeText,
+              hasDue ? styles.dueBadgeTextAlert : hasCredit ? styles.dueBadgeTextCredit : styles.dueBadgeTextClear
+            ]}>
+              {hasDue ? `₹${totalDue.toFixed(0)} due` : hasCredit ? `₹${Math.abs(totalDue).toFixed(0)} credit` : 'All clear'}
             </Text>
           </View>
         </View>
@@ -133,17 +148,28 @@ export default function HomeScreen({ navigation }) {
         <View style={{ flex: 1, marginRight: r.moderate(8) }}>
           <Text {...TEXT_PROPS} style={styles.appTitle}>MedTrack</Text>
           <Text {...TEXT_PROPS} style={styles.appSubtitle} numberOfLines={1}>
-            Medical Khata Book • {getActiveDriverName().includes('SQLITE') ? 'Native SQLite' : 'Web Fallback'}
+            {shopName ? `${shopName} • ` : ''}Medical Khata Book • {getActiveDriverName().includes('SQLITE') ? 'Native SQLite' : 'Web Fallback'}
           </Text>
         </View>
 
-        <TouchableOpacity
-          style={styles.exportButton}
-          onPress={() => navigation.navigate('Settings')}
-          accessibilityLabel="Settings"
-        >
-          <Ionicons name="settings-outline" size={r.scale(20)} color={COLORS.primary} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: r.scale(8) }}>
+          <TouchableOpacity
+            style={styles.exportButton}
+            onPress={() => navigation.navigate('Profile')}
+            accessibilityLabel="Shop & Pharmacist Profile"
+            testID="btn-profile"
+          >
+            <Ionicons name="person-circle-outline" size={r.scale(22)} color={COLORS.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.exportButton}
+            onPress={() => navigation.navigate('Settings')}
+            accessibilityLabel="Settings"
+            testID="btn-settings"
+          >
+            <Ionicons name="settings-outline" size={r.scale(20)} color={COLORS.primary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Auto-focused Large Search Box */}
@@ -324,6 +350,10 @@ const makeStyles = (r, insets) => StyleSheet.create({
     backgroundColor: COLORS.dueBadgeBg,
     borderColor: COLORS.dueBadgeBorder,
   },
+  dueBadgeCredit: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#BBF7D0',
+  },
   dueBadgeClear: {
     backgroundColor: COLORS.clearBadgeBg,
     borderColor: COLORS.clearBadgeBorder,
@@ -334,6 +364,9 @@ const makeStyles = (r, insets) => StyleSheet.create({
   },
   dueBadgeTextAlert: {
     color: COLORS.dueBadgeText,
+  },
+  dueBadgeTextCredit: {
+    color: '#15803D',
   },
   dueBadgeTextClear: {
     color: COLORS.clearBadgeText,

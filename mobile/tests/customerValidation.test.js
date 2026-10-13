@@ -25,6 +25,12 @@ describe('validateCustomerInput', () => {
     expect(result.error).toMatch(/exactly 10 digits/);
   });
 
+  it('rejects phone number starting with 0-5', () => {
+    const result = validateCustomerInput({ name: 'Test', phone_number: '5555555555' }, existingCustomers, 3);
+    expect(result.isValid).toBe(false);
+    expect(result.error).toMatch(/starting with 6-9/);
+  });
+
   it('strips non-digits from phone', () => {
     const result = validateCustomerInput({ name: 'Test', phone_number: '+91-999-999-9999' }, existingCustomers, 3);
     expect(result.isValid).toBe(true);

@@ -14,6 +14,7 @@ import RecordPaymentScreen from './src/screens/RecordPaymentScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import RecycleBinScreen from './src/screens/RecycleBinScreen';
 import EditCustomerScreen from './src/screens/EditCustomerScreen';
+import ProfileScreen from './src/screens/ProfileScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -53,6 +54,7 @@ export default function App() {
           <Stack.Screen name="CustomerProfile" component={CustomerProfileScreen} />
           <Stack.Screen name="AddPurchase" component={AddPurchaseScreen} />
           <Stack.Screen name="RecordPayment" component={RecordPaymentScreen} />
+          <Stack.Screen name="Profile" component={ProfileScreen} />
           <Stack.Screen name="Settings" component={SettingsScreen} />
           <Stack.Screen name="RecycleBin" component={RecycleBinScreen} />
           <Stack.Screen name="EditCustomer" component={EditCustomerScreen} />

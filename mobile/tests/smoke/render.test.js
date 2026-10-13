@@ -8,6 +8,7 @@ import AddPurchaseScreen from '../../src/screens/AddPurchaseScreen';
 import RecordPaymentScreen from '../../src/screens/RecordPaymentScreen';
 import SettingsScreen from '../../src/screens/SettingsScreen';
 import RecycleBinScreen from '../../src/screens/RecycleBinScreen';
+import ProfileScreen from '../../src/screens/ProfileScreen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 
@@ -76,6 +77,13 @@ describe('Phase C: Render Smoke Tests', () => {
       database.getAllCustomers.mockReturnValue([{ customer_id: 1, name: 'John Doe', phone_number: '1234567890', total_due: 100 }]);
       customRender(<HomeScreen navigation={mockNavigation} />);
     });
+
+    it('renders credit balance (due < 0) as "₹X credit"', async () => {
+      database.searchCustomers.mockReturnValue([{ customer_id: 2, name: 'Credit Customer', phone_number: '9848012345', total_due: -150 }]);
+      await customRender(<HomeScreen navigation={mockNavigation} />);
+      const badge = await screen.findByText('₹150 credit');
+      expect(badge).toBeTruthy();
+    });
   });
 
   describe('AddCustomerScreen', () => {
@@ -137,6 +145,20 @@ describe('Phase C: Render Smoke Tests', () => {
       customRender(<SettingsScreen navigation={mockNavigation} />);
     });
 
+    it('renders data management and backup actions without pharmacist or shop inputs', async () => {
+      await customRender(<SettingsScreen navigation={mockNavigation} />);
+      expect(await screen.findByTestId('btn-export-backup')).toBeTruthy();
+      expect(await screen.findByTestId('btn-restore-backup')).toBeTruthy();
+      expect(await screen.findByTestId('btn-recycle-bin')).toBeTruthy();
+      expect(screen.queryByTestId('input-shop-name')).toBeNull();
+    });
+  });
+
+  describe('ProfileScreen', () => {
+    it('renders empty data', () => {
+      customRender(<ProfileScreen navigation={mockNavigation} />);
+    });
+
     it('renders with saved shop profile and expired license badge', async () => {
       database.getShopProfile.mockReturnValue({
         shop_name: 'City Meds',
@@ -147,7 +169,7 @@ describe('Phase C: Render Smoke Tests', () => {
         pharmacist_phone: '9876543211',
         pharmacist_license_validity: '2020-05-01',
       });
-      await customRender(<SettingsScreen navigation={mockNavigation} />);
+      await customRender(<ProfileScreen navigation={mockNavigation} />);
       const shopInput = await screen.findByTestId('input-shop-name');
       expect(shopInput.props.value).toBe('City Meds');
       const expiredBadges = await screen.findAllByText('EXPIRED');
@@ -166,6 +188,21 @@ describe('Phase C: Render Smoke Tests', () => {
       database.getDeletedCustomers.mockReturnValue([{ customer_id: 1, name: 'Deleted John', phone_number: '123' }]);
       customRender(<RecycleBinScreen navigation={mockNavigation} />);
       await waitFor(() => expect(database.getDeletedCustomers).toHaveBeenCalled());
+    });
+
+    it('renders "Deleted X days ago" and contains no countdown or days left wording', async () => {
+      const pastDate = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
+      database.getDeletedCustomers.mockReturnValue([{
+        customer_id: 1,
+        name: 'Deleted John',
+        phone_number: '9848012345',
+        deleted_at: pastDate,
+      }]);
+      await customRender(<RecycleBinScreen navigation={mockNavigation} />);
+      const text = await screen.findByText(/Deleted \d+ days ago/);
+      expect(text).toBeTruthy();
+      expect(screen.queryByText(/days left/i)).toBeNull();
+      expect(screen.queryByText(/remaining/i)).toBeNull();
     });
   });
 });

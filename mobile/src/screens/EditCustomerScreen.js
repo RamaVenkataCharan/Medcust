@@ -58,8 +58,8 @@ export default function EditCustomerScreen({ navigation, route }) {
       updateCustomer(customerId, {
         name: validation.cleanName,
         phone_number: validation.cleanPhone,
-        village,
-        address,
+        village: (village || '').trim(),
+        address: (address || '').trim(),
       });
 
       navigation.goBack();

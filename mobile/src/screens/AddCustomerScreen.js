@@ -36,15 +36,22 @@ export default function AddCustomerScreen({ navigation, route }) {
 
   const handleSave = () => {
     const trimmedName = name.trim();
-    const cleanPhone = cleanPhoneNumber(phone);
+    const rawDigits = String(phone || '').replace(/\D/g, '');
 
     if (!trimmedName) {
       Alert.alert('Name Required', 'Please enter customer name.');
       return;
     }
 
-    if (cleanPhone.length < 10) {
-      Alert.alert('Invalid Phone Number', 'Please enter a valid 10-digit mobile number.');
+    if (rawDigits.length > 10 && !rawDigits.startsWith('91') && !rawDigits.startsWith('0')) {
+      Alert.alert('Invalid Phone Number', 'Mobile number cannot exceed 10 digits.');
+      return;
+    }
+
+    const cleanPhone = cleanPhoneNumber(phone);
+
+    if (cleanPhone.length < 10 || !/^[6-9]\d{9}$/.test(cleanPhone)) {
+      Alert.alert('Invalid Phone Number', 'Please enter a valid 10-digit mobile number starting with 6, 7, 8, or 9.');
       return;
     }
 

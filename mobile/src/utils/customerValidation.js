@@ -15,8 +15,8 @@ function validateCustomerInput(values, existingCustomers, selfId) {
     return { isValid: false, error: 'Name is required.' };
   }
 
-  if (phone.length < 10) {
-    return { isValid: false, error: 'Phone number must be exactly 10 digits.' };
+  if (phone.length !== 10 || !/^[6-9]\d{9}$/.test(phone)) {
+    return { isValid: false, error: 'Phone number must be exactly 10 digits starting with 6-9.' };
   }
 
   const numericSelfId = parseInt(selfId, 10);

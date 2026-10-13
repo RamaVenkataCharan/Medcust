@@ -53,11 +53,11 @@ export function isPaymentEntry(entry) {
 }
 
 /**
- * Validates if a customer can be deleted (only if due is 0).
+ * Validates if a customer can be deleted (allowed if due <= 0: zero due or credit balance).
  */
 export function canDeleteCustomer(entries = []) {
   const totalDue = calculateCustomerTotalDue(entries);
-  return totalDue === 0;
+  return totalDue <= 0;
 }
 
 /**
