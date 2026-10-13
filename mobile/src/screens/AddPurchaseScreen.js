@@ -332,8 +332,8 @@ export default function AddPurchaseScreen({ route, navigation }) {
       addPurchaseEntry({
         customerId,
         medicines: medsForDb,
-        totalAmount: parseFloat(grandTotal.toFixed(2)),
-        amountPaid: parseFloat(paidDisplay.toFixed(2)),
+        totalAmount: bill.rupees.grandTotal,
+        amountPaid: bill.rupees.paid,
       });
 
       navigation.goBack();
@@ -343,7 +343,7 @@ export default function AddPurchaseScreen({ route, navigation }) {
     } finally {
       setSaving(false);
     }
-  }, [validRows, grandTotalPaise, parsedPaidPaise, grandTotal, paidDisplay, customerId, navigation]);
+  }, [validRows, grandTotalPaise, parsedPaidPaise, bill, customerId, navigation]);
 
   const renderCurrentDue = () => {
     if (!customer) return null;
