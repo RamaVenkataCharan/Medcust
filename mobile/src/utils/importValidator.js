@@ -34,6 +34,14 @@ function validateBackupJson(fileString) {
     throw new Error("Missing or invalid entryMedicines array.");
   }
 
+  // Validate shop_profile if present (tolerated if absent)
+  const sp = data.shop_profile || data.shopProfile;
+  if (sp !== undefined && sp !== null) {
+    if (typeof sp !== 'object' || Array.isArray(sp)) {
+      throw new Error("Invalid shop_profile format.");
+    }
+  }
+
   // Validate customers
   const phoneSet = new Set();
   const customerIdSet = new Set();

@@ -185,3 +185,38 @@ describe('Per-row due validation', () => {
   });
 });
 
+describe('Shop profile import tolerance', () => {
+  const baseBackup = {
+    version: '1.0',
+    customers: [{ customer_id: 1, phone_number: '9999999999', name: 'Test' }],
+    entries: [],
+    entryMedicines: []
+  };
+
+  test('tolerates absence of shop_profile', () => {
+    const backup = { ...baseBackup };
+    delete backup.shop_profile;
+    expect(validateBackupJson(JSON.stringify(backup))).toBe(true);
+  });
+
+  test('accepts valid shop_profile object', () => {
+    const backup = {
+      ...baseBackup,
+      shop_profile: {
+        shop_name: 'MedTrack Pharmacy',
+        shop_license_no: 'DL-12345',
+        shop_phone: '9876543210'
+      }
+    };
+    expect(validateBackupJson(JSON.stringify(backup))).toBe(true);
+  });
+
+  test('rejects non-object shop_profile', () => {
+    const backup = {
+      ...baseBackup,
+      shop_profile: 'not-an-object'
+    };
+    expect(() => validateBackupJson(JSON.stringify(backup))).toThrow('Invalid shop_profile format.');
+  });
+});
+

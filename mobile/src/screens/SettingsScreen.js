@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   StyleSheet,
   Platform,
   ScrollView,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,19 +18,86 @@ import * as Sharing from 'expo-sharing';
 
 import { COLORS, TEXT_PROPS } from '../constants/theme';
 import ScreenContainer from '../components/ScreenContainer';
+import CustomTextInput from '../components/CustomTextInput';
 import { useResponsive } from '../utils/responsive';
 import { exportKhataBackup } from '../services/exportService';
 import { performAtomicRestore } from '../services/importService';
 import { validateBackupJson } from '../utils/importValidator';
-import { exportAllData } from '../db/database'; // simpler to get counts
+import { exportAllData, getShopProfile, saveShopProfile } from '../db/database';
+import {
+  validateShopProfile,
+  isLicenseExpired,
+} from '../utils/shopProfileValidation';
 
 export default function SettingsScreen({ navigation }) {
   const [restoring, setRestoring] = useState(false);
   const [exporting, setExporting] = useState(false);
 
+  const [profile, setProfile] = useState({
+    shop_name: '',
+    shop_license_no: '',
+    shop_license_validity: '',
+    shop_phone: '',
+    pharmacist_name: '',
+    pharmacist_phone: '',
+    pharmacist_license_validity: '',
+  });
+  const [errors, setErrors] = useState({});
+  const [savingProfile, setSavingProfile] = useState(false);
+
   const r = useResponsive();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => makeStyles(r, insets), [r, insets]);
+
+  useEffect(() => {
+    try {
+      const sp = getShopProfile();
+      if (sp) {
+        setProfile({
+          shop_name: sp.shop_name || '',
+          shop_license_no: sp.shop_license_no || '',
+          shop_license_validity: sp.shop_license_validity || '',
+          shop_phone: sp.shop_phone || '',
+          pharmacist_name: sp.pharmacist_name || '',
+          pharmacist_phone: sp.pharmacist_phone || '',
+          pharmacist_license_validity: sp.pharmacist_license_validity || '',
+        });
+      }
+    } catch (e) {
+      console.warn('Failed to load shop profile:', e);
+    }
+  }, []);
+
+  const handleProfileChange = (field, value) => {
+    setProfile((prev) => ({ ...prev, [field]: value }));
+    if (errors[field]) {
+      setErrors((prev) => {
+        const updated = { ...prev };
+        delete updated[field];
+        return updated;
+      });
+    }
+  };
+
+  const handleSaveProfile = () => {
+    const val = validateShopProfile(profile);
+    if (!val.isValid) {
+      setErrors(val.errors);
+      Alert.alert('Validation Error', 'Please correct the highlighted fields before saving.');
+      return;
+    }
+
+    setErrors({});
+    setSavingProfile(true);
+    try {
+      saveShopProfile(profile);
+      Alert.alert('Saved', 'Shop and Pharmacist profile updated successfully.');
+    } catch (err) {
+      Alert.alert('Save Failed', err.message || 'Could not update shop profile.');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
 
   const handleExport = async () => {
     setExporting(true);
@@ -45,8 +113,6 @@ export default function SettingsScreen({ navigation }) {
   const handleRestore = async () => {
     if (Platform.OS === 'web') {
       Alert.alert('Restore is only available natively for files. Web fallback can only swap state directly.');
-      // Actually expo-document-picker works on web too, but FileSystem does not fully.
-      // The prompt says "Restore from Backup: DocumentPicker...".
     }
 
     try {
@@ -61,19 +127,16 @@ export default function SettingsScreen({ navigation }) {
 
       setRestoring(true);
       const fileUri = result.assets[0].uri;
-      
-      // Check file size (rough check for safety, e.g., > 20MB reject)
+
       if (result.assets[0].size > 20 * 1024 * 1024) {
-        throw new Error("File is too large.");
+        throw new Error('File is too large.');
       }
 
       const fileContent = await FileSystem.readAsStringAsync(fileUri);
-      
-      // Validate
+
       validateBackupJson(fileContent);
       const backupData = JSON.parse(fileContent);
 
-      // Get current counts for confirmation
       const currentData = exportAllData();
       const currentCustCount = currentData.customers.length;
       const currentEntryCount = currentData.entries.length;
@@ -93,7 +156,7 @@ export default function SettingsScreen({ navigation }) {
               try {
                 await performAtomicRestore(backupData);
                 Alert.alert('Success', 'Data restored successfully!', [
-                  { text: 'OK', onPress: () => navigation.reset({ index: 0, routes: [{ name: 'Home' }] }) }
+                  { text: 'OK', onPress: () => navigation.reset({ index: 0, routes: [{ name: 'Home' }] }) },
                 ]);
               } catch (restoreErr) {
                 if (restoreErr.snapshotUri) {
@@ -102,7 +165,7 @@ export default function SettingsScreen({ navigation }) {
                     restoreErr.message + '\n\nWould you like to share the safe snapshot?',
                     [
                       { text: 'Cancel', style: 'cancel' },
-                      { text: 'Share Snapshot', onPress: () => Sharing.shareAsync(restoreErr.snapshotUri) }
+                      { text: 'Share Snapshot', onPress: () => Sharing.shareAsync(restoreErr.snapshotUri) },
                     ]
                   );
                 } else {
@@ -110,47 +173,208 @@ export default function SettingsScreen({ navigation }) {
                 }
                 setRestoring(false);
               }
-            }
-          }
+            },
+          },
         ],
         { cancelable: false }
       );
-
     } catch (err) {
       setRestoring(false);
       Alert.alert('Import Failed', err.message);
     }
   };
 
+  const isShopExpired = isLicenseExpired(profile.shop_license_validity);
+  const isPharmacistExpired = isLicenseExpired(profile.pharmacist_license_validity);
+
   return (
     <ScreenContainer>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()} testID="settings-back-btn">
           <Ionicons name="arrow-back" size={r.scale(24)} color={COLORS.textPrimary} />
         </TouchableOpacity>
         <Text {...TEXT_PROPS} style={styles.headerTitle}>Settings</Text>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
-        <TouchableOpacity style={styles.actionButton} onPress={handleExport} disabled={exporting || restoring}>
-          {exporting ? <ActivityIndicator color="#fff" /> : <Ionicons name="share-outline" size={r.scale(24)} color="#fff" />}
-          <Text {...TEXT_PROPS} style={styles.actionButtonText}>{exporting ? 'Exporting...' : 'Share Backup'}</Text>
-        </TouchableOpacity>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView contentContainerStyle={styles.content}>
+          {/* Shop Profile Section */}
+          <View style={styles.sectionCard}>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="business-outline" size={r.scale(22)} color={COLORS.primary} />
+              <Text {...TEXT_PROPS} style={styles.sectionTitle}>Shop & Pharmacist Profile</Text>
+            </View>
 
-        <TouchableOpacity style={[styles.actionButton, styles.restoreButton]} onPress={handleRestore} disabled={exporting || restoring}>
-          {restoring ? <ActivityIndicator color="#fff" /> : <Ionicons name="download-outline" size={r.scale(24)} color="#fff" />}
-          <Text {...TEXT_PROPS} style={styles.actionButtonText}>{restoring ? 'Restoring...' : 'Restore from Backup'}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.actionButton, styles.secondaryButton]}
-          activeOpacity={0.8}
-          onPress={() => navigation.navigate('RecycleBin')}
-          disabled={exporting || restoring}
-        >
-          <Ionicons name="trash" size={r.scale(24)} color={COLORS.textPrimary} />
-          <Text {...TEXT_PROPS} style={[styles.actionButtonText, { color: COLORS.textPrimary }]}>Recycle Bin</Text>
-        </TouchableOpacity>
-      </ScrollView>
+            {/* Shop Name */}
+            <View style={styles.inputGroup}>
+              <Text {...TEXT_PROPS} style={styles.inputLabel}>Pharmacy / Shop Name</Text>
+              <CustomTextInput
+                style={styles.textInput}
+                placeholder="e.g. Sri Lakshmi Medical Stores"
+                placeholderTextColor={COLORS.textTertiary}
+                value={profile.shop_name}
+                onChangeText={(val) => handleProfileChange('shop_name', val)}
+                testID="input-shop-name"
+              />
+            </View>
+
+            {/* Drug License Number */}
+            <View style={styles.inputGroup}>
+              <Text {...TEXT_PROPS} style={styles.inputLabel}>Drug License No (DL No)</Text>
+              <CustomTextInput
+                style={styles.textInput}
+                placeholder="e.g. 20B/21B-TS/HYD/12345"
+                placeholderTextColor={COLORS.textTertiary}
+                value={profile.shop_license_no}
+                onChangeText={(val) => handleProfileChange('shop_license_no', val)}
+                testID="input-shop-license"
+              />
+            </View>
+
+            {/* Shop License Validity */}
+            <View style={styles.inputGroup}>
+              <View style={styles.labelRow}>
+                <Text {...TEXT_PROPS} style={styles.inputLabel}>License Validity (YYYY-MM-DD)</Text>
+                {isShopExpired && (
+                  <View style={styles.expiredBadge}>
+                    <Text {...TEXT_PROPS} style={styles.expiredBadgeText}>EXPIRED</Text>
+                  </View>
+                )}
+              </View>
+              <CustomTextInput
+                style={[styles.textInput, isShopExpired && styles.inputWarning, errors.shop_license_validity && styles.inputError]}
+                placeholder="YYYY-MM-DD"
+                placeholderTextColor={COLORS.textTertiary}
+                value={profile.shop_license_validity}
+                onChangeText={(val) => handleProfileChange('shop_license_validity', val)}
+                testID="input-shop-validity"
+              />
+              {errors.shop_license_validity && (
+                <Text {...TEXT_PROPS} style={styles.errorText}>{errors.shop_license_validity}</Text>
+              )}
+            </View>
+
+            {/* Shop Phone */}
+            <View style={styles.inputGroup}>
+              <Text {...TEXT_PROPS} style={styles.inputLabel}>Shop Contact Phone</Text>
+              <CustomTextInput
+                style={[styles.textInput, errors.shop_phone && styles.inputError]}
+                placeholder="10-digit mobile number"
+                placeholderTextColor={COLORS.textTertiary}
+                keyboardType="phone-pad"
+                value={profile.shop_phone}
+                onChangeText={(val) => handleProfileChange('shop_phone', val)}
+                testID="input-shop-phone"
+              />
+              {errors.shop_phone && (
+                <Text {...TEXT_PROPS} style={styles.errorText}>{errors.shop_phone}</Text>
+              )}
+            </View>
+
+            {/* Pharmacist Name */}
+            <View style={styles.inputGroup}>
+              <Text {...TEXT_PROPS} style={styles.inputLabel}>Pharmacist Name</Text>
+              <CustomTextInput
+                style={styles.textInput}
+                placeholder="e.g. Registered Pharmacist Name"
+                placeholderTextColor={COLORS.textTertiary}
+                value={profile.pharmacist_name}
+                onChangeText={(val) => handleProfileChange('pharmacist_name', val)}
+                testID="input-pharmacist-name"
+              />
+            </View>
+
+            {/* Pharmacist Phone */}
+            <View style={styles.inputGroup}>
+              <Text {...TEXT_PROPS} style={styles.inputLabel}>Pharmacist Phone</Text>
+              <CustomTextInput
+                style={[styles.textInput, errors.pharmacist_phone && styles.inputError]}
+                placeholder="10-digit mobile number"
+                placeholderTextColor={COLORS.textTertiary}
+                keyboardType="phone-pad"
+                value={profile.pharmacist_phone}
+                onChangeText={(val) => handleProfileChange('pharmacist_phone', val)}
+                testID="input-pharmacist-phone"
+              />
+              {errors.pharmacist_phone && (
+                <Text {...TEXT_PROPS} style={styles.errorText}>{errors.pharmacist_phone}</Text>
+              )}
+            </View>
+
+            {/* Pharmacist License Validity */}
+            <View style={styles.inputGroup}>
+              <View style={styles.labelRow}>
+                <Text {...TEXT_PROPS} style={styles.inputLabel}>Pharmacist Reg Validity</Text>
+                {isPharmacistExpired && (
+                  <View style={styles.expiredBadge}>
+                    <Text {...TEXT_PROPS} style={styles.expiredBadgeText}>EXPIRED</Text>
+                  </View>
+                )}
+              </View>
+              <CustomTextInput
+                style={[styles.textInput, isPharmacistExpired && styles.inputWarning, errors.pharmacist_license_validity && styles.inputError]}
+                placeholder="YYYY-MM-DD"
+                placeholderTextColor={COLORS.textTertiary}
+                value={profile.pharmacist_license_validity}
+                onChangeText={(val) => handleProfileChange('pharmacist_license_validity', val)}
+                testID="input-pharmacist-validity"
+              />
+              {errors.pharmacist_license_validity && (
+                <Text {...TEXT_PROPS} style={styles.errorText}>{errors.pharmacist_license_validity}</Text>
+              )}
+            </View>
+
+            {/* Save Profile Button */}
+            <TouchableOpacity
+              style={styles.saveProfileBtn}
+              onPress={handleSaveProfile}
+              disabled={savingProfile}
+              testID="btn-save-profile"
+            >
+              {savingProfile ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <>
+                  <Ionicons name="checkmark-circle-outline" size={r.scale(20)} color="#fff" />
+                  <Text {...TEXT_PROPS} style={styles.saveProfileBtnText}>Save Profile</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Backup & Data Section */}
+          <View style={styles.sectionCard}>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="server-outline" size={r.scale(22)} color={COLORS.primary} />
+              <Text {...TEXT_PROPS} style={styles.sectionTitle}>Data Management & Backup</Text>
+            </View>
+
+            <TouchableOpacity style={styles.actionButton} onPress={handleExport} disabled={exporting || restoring} testID="btn-export-backup">
+              {exporting ? <ActivityIndicator color="#fff" /> : <Ionicons name="share-outline" size={r.scale(22)} color="#fff" />}
+              <Text {...TEXT_PROPS} style={styles.actionButtonText}>{exporting ? 'Exporting...' : 'Share Backup'}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.actionButton, styles.restoreButton]} onPress={handleRestore} disabled={exporting || restoring} testID="btn-restore-backup">
+              {restoring ? <ActivityIndicator color="#fff" /> : <Ionicons name="download-outline" size={r.scale(22)} color="#fff" />}
+              <Text {...TEXT_PROPS} style={styles.actionButtonText}>{restoring ? 'Restoring...' : 'Restore from Backup'}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.actionButton, styles.secondaryButton]}
+              activeOpacity={0.8}
+              onPress={() => navigation.navigate('RecycleBin')}
+              disabled={exporting || restoring}
+              testID="btn-recycle-bin"
+            >
+              <Ionicons name="trash-outline" size={r.scale(22)} color={COLORS.textPrimary} />
+              <Text {...TEXT_PROPS} style={[styles.actionButtonText, { color: COLORS.textPrimary }]}>Recycle Bin</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </ScreenContainer>
   );
 }
@@ -163,11 +387,8 @@ const makeStyles = (r, insets) => StyleSheet.create({
     paddingTop: r.moderate(16),
     paddingBottom: r.moderate(16),
     backgroundColor: COLORS.surface,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
   },
   backButton: {
     padding: r.moderate(8),
@@ -175,22 +396,104 @@ const makeStyles = (r, insets) => StyleSheet.create({
   },
   headerTitle: {
     fontSize: r.font(20),
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: COLORS.textPrimary,
   },
   content: {
     padding: r.moderate(16),
-    paddingBottom: insets.bottom + r.moderate(16),
+    paddingBottom: insets.bottom + r.moderate(24),
     gap: r.scale(16),
+  },
+  sectionCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: r.moderate(12),
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: r.moderate(16),
+    gap: r.scale(12),
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: r.scale(8),
+    marginBottom: r.scale(4),
+  },
+  sectionTitle: {
+    fontSize: r.font(16),
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+  },
+  inputGroup: {
+    gap: r.scale(4),
+  },
+  labelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  inputLabel: {
+    fontSize: r.font(13),
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+  },
+  textInput: {
+    backgroundColor: COLORS.background,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: r.moderate(8),
+    paddingHorizontal: r.moderate(12),
+    paddingVertical: r.moderate(10),
+    fontSize: r.font(14),
+    color: COLORS.textPrimary,
+  },
+  inputWarning: {
+    borderColor: '#E65100',
+    backgroundColor: '#FFF8E1',
+  },
+  inputError: {
+    borderColor: COLORS.danger,
+  },
+  expiredBadge: {
+    backgroundColor: '#FFEBEE',
+    paddingHorizontal: r.moderate(6),
+    paddingVertical: r.moderate(2),
+    borderRadius: r.moderate(4),
+    borderWidth: 1,
+    borderColor: '#FFCDD2',
+  },
+  expiredBadgeText: {
+    fontSize: r.font(10),
+    fontWeight: '700',
+    color: '#C62828',
+  },
+  errorText: {
+    fontSize: r.font(11),
+    color: COLORS.danger,
+    marginTop: r.scale(2),
+  },
+  saveProfileBtn: {
+    backgroundColor: COLORS.primary,
+    flexDirection: 'row',
+    padding: r.moderate(12),
+    borderRadius: r.moderate(8),
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: r.scale(8),
+    marginTop: r.scale(6),
+  },
+  saveProfileBtnText: {
+    color: '#fff',
+    fontSize: r.font(15),
+    fontWeight: '600',
   },
   actionButton: {
     backgroundColor: COLORS.primary,
     flexDirection: 'row',
-    padding: r.moderate(16),
-    borderRadius: r.moderate(12),
+    padding: r.moderate(14),
+    borderRadius: r.moderate(10),
     alignItems: 'center',
     justifyContent: 'center',
-    gap: r.scale(12),
+    gap: r.scale(10),
   },
   restoreButton: {
     backgroundColor: COLORS.danger,
@@ -202,7 +505,7 @@ const makeStyles = (r, insets) => StyleSheet.create({
   },
   actionButtonText: {
     color: '#fff',
-    fontSize: r.font(16),
+    fontSize: r.font(15),
     fontWeight: '600',
   },
 });

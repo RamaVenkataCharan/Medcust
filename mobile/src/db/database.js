@@ -53,6 +53,20 @@ function initNativeDatabase() {
     CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone_number);
     CREATE INDEX IF NOT EXISTS idx_entries_customer ON entries(customer_id);
     CREATE INDEX IF NOT EXISTS idx_entry_meds_entry ON entry_medicines(entry_id);
+
+    CREATE TABLE IF NOT EXISTS shop_profile (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      shop_name TEXT DEFAULT '',
+      shop_license_no TEXT DEFAULT '',
+      shop_license_validity TEXT DEFAULT '',
+      shop_phone TEXT DEFAULT '',
+      pharmacist_name TEXT DEFAULT '',
+      pharmacist_phone TEXT DEFAULT '',
+      pharmacist_license_validity TEXT DEFAULT '',
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    INSERT OR IGNORE INTO shop_profile (id) VALUES (1);
   `);
 
   // Idempotent migration: Add 'note' column to entries if it doesn't exist
@@ -89,20 +103,39 @@ function initNativeDatabase() {
 const WEB_STORAGE_KEY = 'medtrack_web_db_v1';
 
 function getWebState() {
-  try {
-    const raw = typeof window !== 'undefined' ? window.localStorage.getItem(WEB_STORAGE_KEY) : null;
-    if (raw) return JSON.parse(raw);
-  } catch (e) {
-    console.warn('Could not read web localStorage:', e);
-  }
-  return {
+  const defaultState = {
     customers: [],
     entries: [],
     entry_medicines: [],
+    shop_profile: {
+      id: 1,
+      shop_name: '',
+      shop_license_no: '',
+      shop_license_validity: '',
+      shop_phone: '',
+      pharmacist_name: '',
+      pharmacist_phone: '',
+      pharmacist_license_validity: '',
+      updated_at: '',
+    },
     nextCustomerId: 1,
     nextEntryId: 1,
     nextMedicineId: 1,
   };
+
+  try {
+    const raw = typeof window !== 'undefined' ? window.localStorage.getItem(WEB_STORAGE_KEY) : null;
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (!parsed.shop_profile) {
+        parsed.shop_profile = { ...defaultState.shop_profile };
+      }
+      return parsed;
+    }
+  } catch (e) {
+    console.warn('Could not read web localStorage:', e);
+  }
+  return defaultState;
 }
 
 function saveWebState(state) {
@@ -517,7 +550,96 @@ export function getPastMedicineNames() {
   return rows.map((r) => r.medicine_name);
 }
 
+export function getShopProfile() {
+  const defaultProfile = {
+    id: 1,
+    shop_name: '',
+    shop_license_no: '',
+    shop_license_validity: '',
+    shop_phone: '',
+    pharmacist_name: '',
+    pharmacist_phone: '',
+    pharmacist_license_validity: '',
+    updated_at: '',
+  };
+
+  if (Platform.OS === 'web') {
+    const state = getWebState();
+    return { ...defaultProfile, ...(state.shop_profile || {}) };
+  }
+
+  const db = getNativeDb();
+  try {
+    const row = db.getFirstSync(`SELECT * FROM shop_profile WHERE id = 1;`);
+    return row ? { ...defaultProfile, ...row } : defaultProfile;
+  } catch (e) {
+    console.warn('Could not read shop_profile from SQLite:', e);
+    return defaultProfile;
+  }
+}
+
+export function saveShopProfile(profile = {}) {
+  const sanitized = {
+    shop_name: String(profile.shop_name || '').trim(),
+    shop_license_no: String(profile.shop_license_no || '').trim(),
+    shop_license_validity: String(profile.shop_license_validity || '').trim(),
+    shop_phone: String(profile.shop_phone || '').trim(),
+    pharmacist_name: String(profile.pharmacist_name || '').trim(),
+    pharmacist_phone: String(profile.pharmacist_phone || '').trim(),
+    pharmacist_license_validity: String(profile.pharmacist_license_validity || '').trim(),
+  };
+
+  const now = getCurrentLocalIso();
+
+  if (Platform.OS === 'web') {
+    const state = getWebState();
+    state.shop_profile = {
+      id: 1,
+      ...sanitized,
+      updated_at: now,
+    };
+    saveWebState(state);
+    return state.shop_profile;
+  }
+
+  const db = getNativeDb();
+  db.runSync(`
+    INSERT INTO shop_profile (
+      id,
+      shop_name,
+      shop_license_no,
+      shop_license_validity,
+      shop_phone,
+      pharmacist_name,
+      pharmacist_phone,
+      pharmacist_license_validity,
+      updated_at
+    ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      shop_name = excluded.shop_name,
+      shop_license_no = excluded.shop_license_no,
+      shop_license_validity = excluded.shop_license_validity,
+      shop_phone = excluded.shop_phone,
+      pharmacist_name = excluded.pharmacist_name,
+      pharmacist_phone = excluded.pharmacist_phone,
+      pharmacist_license_validity = excluded.pharmacist_license_validity,
+      updated_at = excluded.updated_at;
+  `, [
+    sanitized.shop_name,
+    sanitized.shop_license_no,
+    sanitized.shop_license_validity,
+    sanitized.shop_phone,
+    sanitized.pharmacist_name,
+    sanitized.pharmacist_phone,
+    sanitized.pharmacist_license_validity,
+    now,
+  ]);
+
+  return getShopProfile();
+}
+
 export function exportAllData() {
+  const shopProfile = getShopProfile();
   if (Platform.OS === 'web') {
     const state = getWebState();
     return {
@@ -526,6 +648,7 @@ export function exportAllData() {
       customers: state.customers,
       entries: state.entries,
       entryMedicines: state.entry_medicines,
+      shop_profile: shopProfile,
     };
   }
 
@@ -541,6 +664,7 @@ export function exportAllData() {
     customers,
     entries,
     entryMedicines,
+    shop_profile: shopProfile,
   };
 }
 
@@ -549,10 +673,12 @@ export async function restoreDatabaseFromJson(data) {
 
   if (Platform.OS === 'web') {
     // Web fallback (Atomic by definition via localStorage.setItem)
+    const existingState = getWebState();
     const newState = {
       customers: data.customers || [],
       entries: data.entries || [],
       entry_medicines: data.entryMedicines || [],
+      shop_profile: data.shop_profile || data.shopProfile || existingState.shop_profile,
       nextCustomerId: Math.max(1, ...(data.customers || []).map(c => c.customer_id)) + 1,
       nextEntryId: Math.max(1, ...(data.entries || []).map(e => e.entry_id)) + 1,
       nextMedicineId: Math.max(1, ...(data.entryMedicines || []).map(m => m.id)) + 1,
@@ -580,7 +706,34 @@ export async function restoreDatabaseFromJson(data) {
     await db.runAsync(`DELETE FROM entries;`);
     await db.runAsync(`DELETE FROM customers;`);
 
-    // (If shop_profile exists in the future, we don't delete it because it's not in the backup)
+    // Restore shop_profile if provided in backup
+    if (data.shop_profile || data.shopProfile) {
+      const sp = data.shop_profile || data.shopProfile;
+      await db.runAsync(`
+        INSERT INTO shop_profile (
+          id, shop_name, shop_license_no, shop_license_validity, shop_phone,
+          pharmacist_name, pharmacist_phone, pharmacist_license_validity, updated_at
+        ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          shop_name = excluded.shop_name,
+          shop_license_no = excluded.shop_license_no,
+          shop_license_validity = excluded.shop_license_validity,
+          shop_phone = excluded.shop_phone,
+          pharmacist_name = excluded.pharmacist_name,
+          pharmacist_phone = excluded.pharmacist_phone,
+          pharmacist_license_validity = excluded.pharmacist_license_validity,
+          updated_at = excluded.updated_at;
+      `, [
+        sp.shop_name || '',
+        sp.shop_license_no || '',
+        sp.shop_license_validity || '',
+        sp.shop_phone || '',
+        sp.pharmacist_name || '',
+        sp.pharmacist_phone || '',
+        sp.pharmacist_license_validity || '',
+        sp.updated_at || getCurrentLocalIso()
+      ]);
+    }
 
     // 2. Insert customers
     for (const c of data.customers) {

@@ -22,6 +22,8 @@ jest.mock('../../src/db/database', () => ({
   getDeletedCustomers: jest.fn(),
   exportAllData: jest.fn(),
   getActiveDriverName: jest.fn(),
+  getShopProfile: jest.fn(),
+  saveShopProfile: jest.fn(),
 }));
 
 const mockNavigation = {
@@ -43,6 +45,15 @@ describe('Phase C: Render Smoke Tests', () => {
     database.getDeletedCustomers.mockReturnValue([]);
     database.exportAllData.mockReturnValue({ customers: [], entries: [], entryMedicines: [] });
     database.getActiveDriverName.mockReturnValue('SQLITE');
+    database.getShopProfile.mockReturnValue({
+      shop_name: 'Test Shop',
+      shop_license_no: '',
+      shop_license_validity: '',
+      shop_phone: '',
+      pharmacist_name: '',
+      pharmacist_phone: '',
+      pharmacist_license_validity: '',
+    });
   });
 
   const customRender = (ui) => {
