@@ -28,14 +28,14 @@ const customRender = (ui) => {
   );
 };
 
-describe('AddPurchaseScreen Discount Bug', () => {
+describe('AddPurchaseScreen Discount Calculations', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     database.getCustomerById.mockReturnValue({ customer_id: 1, name: 'John Doe', total_due: 65 });
     database.getPastMedicineNames.mockReturnValue([]);
   });
 
-  it('reproduces % discount bug', async () => {
+  it('asserts % discount per-row computation, totals, balance, and save payload', async () => {
     await customRender(
       <AddPurchaseScreen navigation={mockNavigation} route={{ params: { customerId: 1, customerName: 'John Doe' } }} />
     );
@@ -82,7 +82,7 @@ describe('AddPurchaseScreen Discount Bug', () => {
     expect(saveCall.medicines[1].discount).toBe(0);
   });
   
-  it('reproduces ₹ discount bug', async () => {
+  it('asserts ₹ discount per-row computation, totals, and balance', async () => {
     await customRender(
       <AddPurchaseScreen navigation={mockNavigation} route={{ params: { customerId: 1, customerName: 'John Doe' } }} />
     );
