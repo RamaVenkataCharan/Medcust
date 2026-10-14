@@ -106,6 +106,7 @@ export const FONTS = {
 export const GLOBAL_STYLES = {
   noFocusOutline: Platform.select({
     web: {
+      outline: 'none',
       outlineStyle: 'none',
       outlineWidth: 0,
       boxShadow: 'none',
