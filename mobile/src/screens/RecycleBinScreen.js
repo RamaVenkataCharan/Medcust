@@ -67,6 +67,7 @@ export default function RecycleBinScreen({ navigation }) {
     const now = new Date();
     const diffTime = Math.abs(now - deletedDate);
     const diffDays = Math.max(0, Math.floor(diffTime / (1000 * 60 * 60 * 24)));
+    const deletedText = diffDays === 0 ? 'Deleted today' : `Deleted ${diffDays} ${diffDays === 1 ? 'day' : 'days'} ago`;
     
     return (
       <View style={styles.card}>
@@ -74,7 +75,7 @@ export default function RecycleBinScreen({ navigation }) {
           <Text {...TEXT_PROPS} style={styles.name}>{item.name}</Text>
           <Text {...TEXT_PROPS} style={styles.details}>{item.phone_number}</Text>
           {item.village ? <Text {...TEXT_PROPS} style={styles.details}>{item.village}</Text> : null}
-          <Text {...TEXT_PROPS} style={styles.deletedDays}>Deleted {diffDays} {diffDays === 1 ? 'day' : 'days'} ago</Text>
+          <Text {...TEXT_PROPS} style={styles.deletedDays}>{deletedText}</Text>
         </View>
         <View style={styles.cardActions}>
           <TouchableOpacity style={styles.actionBtn} onPress={() => handleRestore(item)}>

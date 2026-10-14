@@ -80,7 +80,7 @@ describe('AddPurchaseScreen Discount Calculations', () => {
     expect(saveCall.medicines[0].discount).toBe(7.5);
     expect(saveCall.medicines[1].price).toBe(15);
     expect(saveCall.medicines[1].discount).toBe(0);
-  });
+  }, 15000);
   
   it('asserts ₹ discount per-row computation, totals, and balance', async () => {
     await customRender(

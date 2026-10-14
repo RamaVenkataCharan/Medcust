@@ -73,15 +73,18 @@ describe('Phase C: Render Smoke Tests', () => {
       customRender(<HomeScreen navigation={mockNavigation} />);
     });
 
-    it('renders normal data', () => {
+    it('renders normal data with formatINR two decimal due', async () => {
       database.getAllCustomers.mockReturnValue([{ customer_id: 1, name: 'John Doe', phone_number: '1234567890', total_due: 100 }]);
-      customRender(<HomeScreen navigation={mockNavigation} />);
+      database.searchCustomers.mockReturnValue([{ customer_id: 1, name: 'John Doe', phone_number: '1234567890', total_due: 100 }]);
+      await customRender(<HomeScreen navigation={mockNavigation} />);
+      const badge = await screen.findByText('₹100.00 due');
+      expect(badge).toBeTruthy();
     });
 
-    it('renders credit balance (due < 0) as "₹X credit"', async () => {
+    it('renders credit balance (due < 0) as "₹X.XX credit"', async () => {
       database.searchCustomers.mockReturnValue([{ customer_id: 2, name: 'Credit Customer', phone_number: '9848012345', total_due: -150 }]);
       await customRender(<HomeScreen navigation={mockNavigation} />);
-      const badge = await screen.findByText('₹150 credit');
+      const badge = await screen.findByText('₹150.00 credit');
       expect(badge).toBeTruthy();
     });
   });
@@ -216,6 +219,19 @@ describe('Phase C: Render Smoke Tests', () => {
       }]);
       await customRender(<RecycleBinScreen navigation={mockNavigation} />);
       const text = await screen.findByText('Deleted 1 day ago');
+      expect(text).toBeTruthy();
+    });
+
+    it('renders "Deleted today" when 0 days elapsed', async () => {
+      const todayDate = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+      database.getDeletedCustomers.mockReturnValue([{
+        customer_id: 3,
+        name: 'Deleted Today User',
+        phone_number: '9848011223',
+        deleted_at: todayDate,
+      }]);
+      await customRender(<RecycleBinScreen navigation={mockNavigation} />);
+      const text = await screen.findByText('Deleted today');
       expect(text).toBeTruthy();
     });
   });

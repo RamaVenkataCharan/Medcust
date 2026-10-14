@@ -16,7 +16,7 @@ const { validateCustomerInput } = require('../../src/utils/customerValidation');
 const { cleanPhoneNumber, canDeleteCustomer } = require('../../src/utils/khataLogic');
 const { validateShopProfile, isLicenseExpired, sanitizeShopProfile } = require('../../src/utils/shopProfileValidation');
 
-describe('E2E Audit: Add Customer, Delete Customer & Shop Profile', () => {
+describe('Feature Integration: Add Customer, Delete Customer & Shop Profile', () => {
   beforeEach(() => {
     // Reset web store
     global.window.localStorage.store = {};

@@ -16,6 +16,7 @@ import { COLORS } from '../constants/theme';
 import { searchCustomers, getActiveDriverName, getShopProfile } from '../db/database';
 import { exportKhataBackup } from '../services/exportService';
 import { useResponsive, TEXT_PROPS } from '../utils/responsive';
+import { formatINR } from '../utils/formatUtils';
 import ScreenContainer from '../components/ScreenContainer';
 
 export default function HomeScreen({ navigation }) {
@@ -122,7 +123,7 @@ export default function HomeScreen({ navigation }) {
               styles.dueBadgeText,
               hasDue ? styles.dueBadgeTextAlert : hasCredit ? styles.dueBadgeTextCredit : styles.dueBadgeTextClear
             ]}>
-              {hasDue ? `₹${totalDue.toFixed(0)} due` : hasCredit ? `₹${Math.abs(totalDue).toFixed(0)} credit` : 'All clear'}
+              {hasDue ? `${formatINR(totalDue)} due` : hasCredit ? `${formatINR(Math.abs(totalDue))} credit` : 'All clear'}
             </Text>
           </View>
         </View>
@@ -351,8 +352,8 @@ const makeStyles = (r, insets) => StyleSheet.create({
     borderColor: COLORS.dueBadgeBorder,
   },
   dueBadgeCredit: {
-    backgroundColor: '#F0FDF4',
-    borderColor: '#BBF7D0',
+    backgroundColor: COLORS.creditBadgeBg,
+    borderColor: COLORS.creditBadgeBorder,
   },
   dueBadgeClear: {
     backgroundColor: COLORS.clearBadgeBg,
@@ -366,7 +367,7 @@ const makeStyles = (r, insets) => StyleSheet.create({
     color: COLORS.dueBadgeText,
   },
   dueBadgeTextCredit: {
-    color: '#15803D',
+    color: COLORS.creditBadgeText,
   },
   dueBadgeTextClear: {
     color: COLORS.clearBadgeText,
