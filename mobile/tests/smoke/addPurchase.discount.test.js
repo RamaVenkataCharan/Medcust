@@ -35,24 +35,20 @@ describe('AddPurchaseScreen Discount Calculations', () => {
     database.getPastMedicineNames.mockReturnValue([]);
   });
 
-  it('asserts % discount per-row computation, totals, balance, and save payload', async () => {
+  it('Scenario A: asserts % discount default mode without chip press, totals, balance, and save payload', async () => {
     await customRender(
       <AddPurchaseScreen navigation={mockNavigation} route={{ params: { customerId: 1, customerName: 'John Doe' } }} />
     );
 
-    // Row 1: Cifran, 75, 10%
+    // Row 1: Cifran, 75, 10% (uses default % mode with no chip press)
     fireEvent.changeText(await screen.findByTestId('medicineName_0'), 'Cifran');
     fireEvent.changeText(await screen.findByTestId('medicinePrice_0'), '75');
-    
-    // Change to % mode
-    fireEvent.press(await screen.findByTestId('medicineMode_0'));
-    
     fireEvent.changeText(await screen.findByTestId('medicineDiscount_0'), '10');
 
     // Add Row
     fireEvent.press(await screen.findByText('Add Medicine'));
 
-    // Row 2: Dolo, 15, 0 (default ₹ mode)
+    // Row 2: Dolo, 15, 0 (default % mode, 0 discount)
     fireEvent.changeText(await screen.findByTestId('medicineName_1'), 'Dolo');
     fireEvent.changeText(await screen.findByTestId('medicinePrice_1'), '15');
     fireEvent.changeText(await screen.findByTestId('medicineDiscount_1'), '0');
@@ -82,22 +78,27 @@ describe('AddPurchaseScreen Discount Calculations', () => {
     expect(saveCall.medicines[1].discount).toBe(0);
   }, 15000);
   
-  it('asserts ₹ discount per-row computation, totals, and balance', async () => {
+  it('Scenario B: asserts ₹ discount mode by pressing chip to switch to ₹, totals, and balance', async () => {
     await customRender(
       <AddPurchaseScreen navigation={mockNavigation} route={{ params: { customerId: 1, customerName: 'John Doe' } }} />
     );
 
-    // Row 1: Cifran, 75, 7.5₹
+    // Row 1: Cifran, 75, switch to ₹ mode via chip press, discount 7.5
     fireEvent.changeText(await screen.findByTestId('medicineName_0'), 'Cifran');
     fireEvent.changeText(await screen.findByTestId('medicinePrice_0'), '75');
+
+    // Press chip to switch from default % to ₹
+    fireEvent.press(await screen.findByTestId('medicineMode_0'));
+
     fireEvent.changeText(await screen.findByTestId('medicineDiscount_0'), '7.5');
 
     // Add Row
     fireEvent.press(await screen.findByText('Add Medicine'));
 
-    // Row 2: Dolo, 15, 0 (default ₹ mode)
+    // Row 2: Dolo, 15, switch to ₹ mode, discount 0
     fireEvent.changeText(await screen.findByTestId('medicineName_1'), 'Dolo');
     fireEvent.changeText(await screen.findByTestId('medicinePrice_1'), '15');
+    fireEvent.press(await screen.findByTestId('medicineMode_1'));
     fireEvent.changeText(await screen.findByTestId('medicineDiscount_1'), '0');
 
     // Paid Now 25
@@ -109,7 +110,65 @@ describe('AddPurchaseScreen Discount Calculations', () => {
     expect(await screen.findByText('₹82.50')).toBeTruthy();
     expect(await screen.findByText('₹57.50')).toBeTruthy();
     expect(await screen.findByText('₹122.50')).toBeTruthy();
+
+    // Trigger Save and assert DB call
+    fireEvent.press(await screen.findByText('Save Purchase'));
+    expect(database.addPurchaseEntry).toHaveBeenCalled();
+    const saveCall = database.addPurchaseEntry.mock.calls[0][0];
+    expect(saveCall.totalAmount).toBe(82.50);
+    expect(saveCall.amountPaid).toBe(25);
+    expect(saveCall.medicines[0].price).toBe(75);
+    expect(saveCall.medicines[0].discount).toBe(7.5);
+  }, 15000);
+
+  it('New case: Domperidone 125 with 5% default discount and paid 0', async () => {
+    database.getCustomerById.mockReturnValue({ customer_id: 1, name: 'John Doe', total_due: 0 });
+
+    await customRender(
+      <AddPurchaseScreen navigation={mockNavigation} route={{ params: { customerId: 1, customerName: 'John Doe' } }} />
+    );
+
+    fireEvent.changeText(await screen.findByTestId('medicineName_0'), 'Domperidone');
+    fireEvent.changeText(await screen.findByTestId('medicinePrice_0'), '125');
+    // Discount 5 in default % mode (no chip press)
+    fireEvent.changeText(await screen.findByTestId('medicineDiscount_0'), '5');
+    fireEvent.changeText(await screen.findByTestId('paidNowInput'), '0');
+
+    // Expect Net Total 118.75, Discount -6.25, Grand Total 118.75, Subtotal 125.00
+    const matches118 = await screen.findAllByText('₹118.75');
+    expect(matches118.length).toBeGreaterThanOrEqual(2); // Appears in row Net Total and Grand Total
+    expect(await screen.findByText('−₹6.25')).toBeTruthy();
+    expect(await screen.findByText('₹125.00')).toBeTruthy();
+
+    // Save and check payload (saved discount 6.25)
+    fireEvent.press(await screen.findByText('Save Purchase'));
+    expect(database.addPurchaseEntry).toHaveBeenCalled();
+    const saveCall = database.addPurchaseEntry.mock.calls[0][0];
+    expect(saveCall.totalAmount).toBe(118.75);
+    expect(saveCall.amountPaid).toBe(0);
+    expect(saveCall.medicines[0].name).toBe('Domperidone');
+    expect(saveCall.medicines[0].price).toBe(125);
+    expect(saveCall.medicines[0].discount).toBe(6.25);
+  }, 15000);
+
+  it('validates percent above 100 shows inline error and disables Save', async () => {
+    database.getCustomerById.mockReturnValue({ customer_id: 1, name: 'John Doe', total_due: 0 });
+
+    await customRender(
+      <AddPurchaseScreen navigation={mockNavigation} route={{ params: { customerId: 1, customerName: 'John Doe' } }} />
+    );
+
+    fireEvent.changeText(await screen.findByTestId('medicineName_0'), 'Amoxicillin');
+    fireEvent.changeText(await screen.findByTestId('medicinePrice_0'), '100');
+    // Discount 105% in default mode
+    fireEvent.changeText(await screen.findByTestId('medicineDiscount_0'), '105');
+
+    // Assert inline error under field
+    expect(await screen.findByText('Discount cannot exceed 100%')).toBeTruthy();
+
+    // Assert Save is disabled
+    const saveBtn = await screen.findByText('Save Purchase');
+    fireEvent.press(saveBtn);
+    expect(database.addPurchaseEntry).not.toHaveBeenCalled();
   }, 15000);
 });
-
-

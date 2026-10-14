@@ -36,7 +36,7 @@ function newRowId() {
 }
 
 function makeMedicineRow() {
-  return { id: newRowId(), name: '', price: '', discount: '', discountMode: '₹' };
+  return { id: newRowId(), name: '', price: '', discount: '', discountMode: '%' };
 }
 
 const MedicineTableRow = memo(function MedicineTableRow({
@@ -54,6 +54,7 @@ const MedicineTableRow = memo(function MedicineTableRow({
   onRemove,
   onFocus,
   netTotal,
+  discountError,
   styles,
   r
 }) {
@@ -104,7 +105,7 @@ const MedicineTableRow = memo(function MedicineTableRow({
           <View style={styles.discountCell}>
             <CustomTextInput
               ref={discountRef}
-              style={[styles.cellInput, styles.cellCenter, styles.discountInput]}
+              style={[styles.cellInput, styles.cellRight, styles.discountInput]}
               value={item.discount}
               onChangeText={onChangeDiscount}
               placeholder="0"
@@ -124,10 +125,16 @@ const MedicineTableRow = memo(function MedicineTableRow({
               onPress={onToggleMode}
               hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
               testID={`medicineMode_${index}`}
+              accessibilityLabel={`Discount mode for medicine ${index + 1}, currently ${item.discountMode === '%' ? 'percent' : 'rupees'}`}
             >
               <Text {...TEXT_PROPS} style={styles.modeChipText}>{item.discountMode}</Text>
             </TouchableOpacity>
           </View>
+          {discountError ? (
+            <Text {...TEXT_PROPS} style={styles.discountInlineError} testID={`discountError_${index}`}>
+              {discountError}
+            </Text>
+          ) : null}
         </View>
 
         <View style={styles.colNetTotal}>
@@ -217,7 +224,7 @@ export default function AddPurchaseScreen({ route, navigation }) {
     setMedicines((prev) =>
       prev.map((m) =>
         m.id === id
-          ? { ...m, discountMode: m.discountMode === '₹' ? '%' : '₹', discount: '' }
+          ? { ...m, discountMode: m.discountMode === '%' ? '₹' : '%', discount: '' }
           : m
       )
     );
@@ -248,6 +255,22 @@ export default function AddPurchaseScreen({ route, navigation }) {
       ? sanitized.split('.')[0] + '.' + sanitized.split('.')[1].slice(0, 2)
       : sanitized;
   }
+
+  const getDiscountError = useCallback((m) => {
+    if (!m.discount || m.discount.trim() === '') return '';
+    const d = Number(m.discount);
+    if (isNaN(d)) return 'Invalid discount';
+    if (d < 0) return 'Discount cannot be negative';
+    if (m.discountMode === '%') {
+      if (d > 100) return 'Discount cannot exceed 100%';
+    } else {
+      const p = parseFloat(m.price);
+      if (!isNaN(p) && p > 0 && d > p) {
+        return 'Discount cannot exceed price';
+      }
+    }
+    return '';
+  }, []);
 
   const validRows = medicines.filter((m) => {
     const p = parseFloat(m.price);
@@ -282,7 +305,8 @@ export default function AddPurchaseScreen({ route, navigation }) {
   const paidDisplay = bill.rupees.paid;
 
   const isFullyPaid = dueCreatedPaise === 0 && grandTotalPaise > 0;
-  const isFormValid = bill.ok && validRows.length > 0;
+  const hasDiscountError = medicines.some((m) => Boolean(getDiscountError(m)));
+  const isFormValid = bill.ok && validRows.length > 0 && !hasDiscountError;
 
   const focusedRow = medicines.find((m) => m.id === focusedRowId);
   const focusedName = focusedRow?.name?.trim() || '';
@@ -299,6 +323,10 @@ export default function AddPurchaseScreen({ route, navigation }) {
 
   const handleSave = useCallback(() => {
     setPaidError('');
+
+    if (!isFormValid) {
+      return;
+    }
 
     if (parsedPaidPaise > grandTotalPaise) {
       setPaidError('Paid amount cannot exceed the total');
@@ -343,7 +371,7 @@ export default function AddPurchaseScreen({ route, navigation }) {
     } finally {
       setSaving(false);
     }
-  }, [validRows, grandTotalPaise, parsedPaidPaise, bill, customerId, navigation]);
+  }, [isFormValid, validRows, grandTotalPaise, parsedPaidPaise, bill, customerId, navigation]);
 
   const renderCurrentDue = () => {
     if (!customer) return null;
@@ -450,6 +478,7 @@ export default function AddPurchaseScreen({ route, navigation }) {
                   onRemove={() => removeMedicineRow(item.id)}
                   onFocus={setFocusedRowId}
                   netTotal={netDisplay}
+                  discountError={getDiscountError(item)}
                   styles={styles}
                   r={r}
                 />
@@ -571,10 +600,10 @@ export default function AddPurchaseScreen({ route, navigation }) {
   );
 }
 
-const COL_NAME_FLEX = 2.2;
-const COL_PRICE_FLEX = 1.3;
+const COL_NAME_FLEX = 1.85;
+const COL_PRICE_FLEX = 1.15;
 const COL_DISCOUNT_FLEX = 1.5;
-const COL_NET_FLEX = 1.3;
+const COL_NET_FLEX = 1.35;
 
 const makeStyles = (r, footerH, insets) => StyleSheet.create({
   flex: { flex: 1 },
@@ -688,20 +717,22 @@ const makeStyles = (r, footerH, insets) => StyleSheet.create({
     fontSize: r.font(12),
     fontWeight: '600',
     color: COLORS.textSecondary,
+    minWidth: 0,
   },
   tableHeaderDivider: {
     height: 1,
     backgroundColor: COLORS.border,
     marginBottom: r.moderate(4),
   },
-  colName: { flex: COL_NAME_FLEX },
-  colPrice: { flex: COL_PRICE_FLEX },
-  colDiscount: { flex: COL_DISCOUNT_FLEX },
+  colName: { flex: COL_NAME_FLEX, minWidth: 0 },
+  colPrice: { flex: COL_PRICE_FLEX, minWidth: 0 },
+  colDiscount: { flex: COL_DISCOUNT_FLEX, minWidth: 0 },
   colNetTotal: {
     flex: COL_NET_FLEX,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
+    minWidth: 0,
   },
   cellRight: { textAlign: 'right' },
   cellCenter: { textAlign: 'center' },
@@ -721,9 +752,12 @@ const makeStyles = (r, footerH, insets) => StyleSheet.create({
     color: COLORS.textPrimary,
     paddingVertical: r.scale(8),
     paddingHorizontal: r.scale(2),
+    minWidth: 0,
   },
   discountInput: {
     flex: 1,
+    minWidth: 0,
+    textAlign: 'right',
   },
   cellNetTotal: {
     fontSize: r.font(14),
@@ -731,6 +765,7 @@ const makeStyles = (r, footerH, insets) => StyleSheet.create({
     color: COLORS.textPrimary,
     textAlign: 'right',
     flex: 1,
+    minWidth: 0,
   },
   removeBtn: {
     marginLeft: r.moderate(2),
@@ -742,21 +777,30 @@ const makeStyles = (r, footerH, insets) => StyleSheet.create({
   discountCell: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     flex: 1,
+    minWidth: 0,
   },
   modeChip: {
     backgroundColor: COLORS.primaryLight,
     borderRadius: r.moderate(6),
-    paddingHorizontal: r.moderate(5),
-    paddingVertical: r.moderate(3),
-    marginLeft: r.moderate(3),
-    minWidth: r.scale(24),
+    paddingHorizontal: r.moderate(4),
+    paddingVertical: r.moderate(2),
+    marginLeft: r.moderate(2),
+    minWidth: r.scale(20),
     alignItems: 'center',
+    justifyContent: 'center',
   },
   modeChipText: {
     fontSize: r.font(11),
     fontWeight: '700',
     color: COLORS.primary,
+  },
+  discountInlineError: {
+    fontSize: r.font(10),
+    color: COLORS.danger,
+    textAlign: 'center',
+    marginTop: r.scale(2),
   },
   suggestionsRow: {
     marginTop: r.moderate(8),
