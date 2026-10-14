@@ -66,7 +66,7 @@ export default function RecycleBinScreen({ navigation }) {
     const deletedDate = new Date(item.deleted_at);
     const now = new Date();
     const diffTime = Math.abs(now - deletedDate);
-    const diffDays = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+    const diffDays = Math.max(0, Math.floor(diffTime / (1000 * 60 * 60 * 24)));
     
     return (
       <View style={styles.card}>

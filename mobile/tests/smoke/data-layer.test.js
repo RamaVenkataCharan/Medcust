@@ -74,6 +74,13 @@ describe('Phase E: Data-Layer Sanity', () => {
     expect(villageSearch[0].customer_id).toBe(cust3);
     expect(villageSearch[0].village).toBe('Rampur');
 
+    // 4c. Customer with credit balance preserves negative total_due in searchCustomers (does NOT clamp to 0)
+    const custCredit = await addCustomer({ phone_number: '6666666666', name: 'Credit Customer', village: 'Town', address: 'Shop 5' });
+    await addDuePayment({ customerId: custCredit, amountPaid: 100, note: 'Advance credit payment' });
+    const creditSearch = await searchCustomers('Credit Customer');
+    expect(creditSearch.length).toBe(1);
+    expect(creditSearch[0].total_due).toBe(-100);
+
     // 5. Restore verification catches tampered backup
     const backup = await exportAllData();
     const parsed = JSON.parse(JSON.stringify(backup));

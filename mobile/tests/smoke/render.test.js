@@ -191,18 +191,32 @@ describe('Phase C: Render Smoke Tests', () => {
     });
 
     it('renders "Deleted X days ago" and contains no countdown or days left wording', async () => {
-      const pastDate = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
+      const pastDate5Days = new Date(Date.now() - (5 * 24 + 2) * 60 * 60 * 1000).toISOString();
       database.getDeletedCustomers.mockReturnValue([{
         customer_id: 1,
         name: 'Deleted John',
         phone_number: '9848012345',
-        deleted_at: pastDate,
+        deleted_at: pastDate5Days,
       }]);
       await customRender(<RecycleBinScreen navigation={mockNavigation} />);
-      const text = await screen.findByText(/Deleted \d+ days ago/);
+      const text = await screen.findByText('Deleted 5 days ago');
       expect(text).toBeTruthy();
       expect(screen.queryByText(/days left/i)).toBeNull();
+      expect(screen.queryByText(/countdown/i)).toBeNull();
       expect(screen.queryByText(/remaining/i)).toBeNull();
+    });
+
+    it('renders singular "Deleted 1 day ago" correctly', async () => {
+      const pastDate1Day = new Date(Date.now() - 26 * 60 * 60 * 1000).toISOString();
+      database.getDeletedCustomers.mockReturnValue([{
+        customer_id: 2,
+        name: 'Deleted Yesterday',
+        phone_number: '9848099999',
+        deleted_at: pastDate1Day,
+      }]);
+      await customRender(<RecycleBinScreen navigation={mockNavigation} />);
+      const text = await screen.findByText('Deleted 1 day ago');
+      expect(text).toBeTruthy();
     });
   });
 });
