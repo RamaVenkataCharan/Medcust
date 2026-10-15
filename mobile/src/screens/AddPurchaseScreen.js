@@ -15,10 +15,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../constants/theme';
 import { addPurchaseEntry, getPastMedicineNames, getCustomerById } from '../db/database';
-import { calculateEntryDue } from '../utils/khataLogic';
 import {
-  formatINR,
-  formatPhone,
+  formatINRWhole,
   isJunkMedicineName,
   discountToRupees,
   paise,
@@ -67,7 +65,7 @@ const MedicineTableRow = memo(function MedicineTableRow({
             ref={nameRef}
             style={styles.cellInput}
             value={item.name}
-            onChangeText={onChangeName}
+            onChangeText={(val) => onChangeName(val.replace(/^\s+/, ''))}
             placeholder={`Medicine ${index + 1}`}
             placeholderTextColor={COLORS.textTertiary}
             autoCapitalize="words"
@@ -139,17 +137,21 @@ const MedicineTableRow = memo(function MedicineTableRow({
 
         <View style={styles.colNetTotal}>
           <Text {...TEXT_PROPS} style={styles.cellNetTotal} numberOfLines={1}>
-            {netTotal >= 0 ? formatINR(netTotal) : '—'}
+            {netTotal >= 0 ? formatINRWhole(netTotal) : '—'}
           </Text>
-          {!isFirst && (
-            <TouchableOpacity
-              onPress={onRemove}
-              style={styles.removeBtn}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Ionicons name="close-circle" size={r.scale(16)} color={COLORS.textTertiary} />
-            </TouchableOpacity>
-          )}
+          <View style={styles.removeSlot}>
+            {!isFirst && (
+              <TouchableOpacity
+                onPress={onRemove}
+                style={styles.removeBtn}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityLabel={`Remove medicine ${index + 1}`}
+                testID={`btn_remove_${index}`}
+              >
+                <Ionicons name="close-circle" size={r.scale(16)} color={COLORS.textTertiary} />
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
       </View>
     </View>
@@ -380,7 +382,7 @@ export default function AddPurchaseScreen({ route, navigation }) {
       return (
         <View style={styles.dueRightCol}>
           <Text {...TEXT_PROPS} style={styles.currentDueLabel}>Current Due</Text>
-          <Text {...TEXT_PROPS} style={styles.currentDueAmber}>{formatINR(due)}</Text>
+          <Text {...TEXT_PROPS} style={styles.currentDueAmber}>{formatINRWhole(due)}</Text>
         </View>
       );
     }
@@ -388,14 +390,14 @@ export default function AddPurchaseScreen({ route, navigation }) {
       return (
         <View style={styles.dueRightCol}>
           <Text {...TEXT_PROPS} style={styles.currentDueLabel}>Credit</Text>
-          <Text {...TEXT_PROPS} style={styles.currentDueCredit}>{formatINR(Math.abs(due))}</Text>
+          <Text {...TEXT_PROPS} style={styles.currentDueCredit}>{formatINRWhole(Math.abs(due))}</Text>
         </View>
       );
     }
     return (
       <View style={styles.dueRightCol}>
         <Text {...TEXT_PROPS} style={styles.currentDueLabel}>Current Due</Text>
-        <Text {...TEXT_PROPS} style={styles.currentDueClear}>{formatINR(0)}</Text>
+        <Text {...TEXT_PROPS} style={styles.currentDueClear}>{formatINRWhole(0)}</Text>
       </View>
     );
   };
@@ -429,8 +431,8 @@ export default function AddPurchaseScreen({ route, navigation }) {
                   <Ionicons name="person" size={r.scale(22)} color={COLORS.primary} />
                 </View>
                 <View style={styles.customerTextBlock}>
-                  <Text {...TEXT_PROPS} style={styles.customerName} numberOfLines={1}>
-                    {customer.name}{customer.phone_number ? ' · ' + formatPhone(customer.phone_number) : ''}
+                  <Text {...TEXT_PROPS} style={styles.customerName} numberOfLines={1} ellipsizeMode="tail">
+                    {customer.name}
                   </Text>
                 </View>
               </View>
@@ -441,10 +443,19 @@ export default function AddPurchaseScreen({ route, navigation }) {
 
           <View style={styles.card}>
             <View style={styles.tableHeader}>
-              <Text {...TEXT_PROPS} style={[styles.tableHeaderCell, styles.colName]}>Medicine</Text>
-              <Text {...TEXT_PROPS} style={[styles.tableHeaderCell, styles.colPrice, { textAlign: 'right' }]}>Actual Price</Text>
-              <Text {...TEXT_PROPS} style={[styles.tableHeaderCell, styles.colDiscount, { textAlign: 'center' }]}>Discount</Text>
-              <Text {...TEXT_PROPS} style={[styles.tableHeaderCell, styles.colNetTotal, { textAlign: 'right' }]}>Net Total</Text>
+              <View style={styles.colName}>
+                <Text {...TEXT_PROPS} style={[styles.tableHeaderCell, styles.headerTextLeft]} numberOfLines={1}>Medicine</Text>
+              </View>
+              <View style={styles.colPrice}>
+                <Text {...TEXT_PROPS} style={[styles.tableHeaderCell, styles.cellRight, styles.headerTextRight]} numberOfLines={1}>Actual Price</Text>
+              </View>
+              <View style={styles.colDiscount}>
+                <Text {...TEXT_PROPS} style={[styles.tableHeaderCell, styles.cellRight, styles.headerTextRight]} numberOfLines={1}>Discount</Text>
+              </View>
+              <View style={styles.colNetTotal}>
+                <Text {...TEXT_PROPS} style={[styles.tableHeaderCell, styles.headerNetTotal]} numberOfLines={1}>Net Total</Text>
+                <View style={styles.removeSlot} />
+              </View>
             </View>
             <View style={styles.tableHeaderDivider} />
 
@@ -517,21 +528,22 @@ export default function AddPurchaseScreen({ route, navigation }) {
           </View>
 
           <View style={styles.card}>
+            {/* NOTE: Displayed totals on this screen are rounded for display only. Underlying calculations and saved payloads retain exact 2-decimal values. */}
             <View style={styles.totalRow}>
               <Text {...TEXT_PROPS} style={styles.totalLabel}>Subtotal</Text>
-              <Text {...TEXT_PROPS} style={styles.totalValue}>{formatINR(subtotal)}</Text>
+              <Text {...TEXT_PROPS} style={styles.totalValue}>{formatINRWhole(subtotal)}</Text>
             </View>
 
             {totalDiscountPaise > 0 && (
               <View style={styles.totalRow}>
                 <Text {...TEXT_PROPS} style={styles.totalLabel}>Discount</Text>
-                <Text {...TEXT_PROPS} style={styles.discountValue}>−{formatINR(totalDiscount)}</Text>
+                <Text {...TEXT_PROPS} style={styles.discountValue}>−{formatINRWhole(totalDiscount)}</Text>
               </View>
             )}
 
             <View style={styles.grandTotalBand}>
               <Text {...TEXT_PROPS} style={styles.grandTotalLabel}>Grand Total</Text>
-              <Text {...TEXT_PROPS} style={styles.grandTotalAmount}>{formatINR(grandTotal)}</Text>
+              <Text {...TEXT_PROPS} style={styles.grandTotalAmount}>{formatINRWhole(grandTotal)}</Text>
             </View>
 
             <View style={styles.sectionDivider} />
@@ -546,7 +558,7 @@ export default function AddPurchaseScreen({ route, navigation }) {
                   setAmountPaid(sanitiseNumeric(val));
                   setPaidError('');
                 }}
-                placeholder="₹0.00"
+                placeholder="₹0"
                 placeholderTextColor={COLORS.textTertiary}
                 keyboardType="decimal-pad"
                 selectTextOnFocus
@@ -560,7 +572,7 @@ export default function AddPurchaseScreen({ route, navigation }) {
                 {isFullyPaid ? 'Fully paid ✓' : 'Due Created'}
               </Text>
               {!isFullyPaid && (
-                <Text {...TEXT_PROPS} style={styles.dueCreatedAmount}>{formatINR(dueCreated)}</Text>
+                <Text {...TEXT_PROPS} style={styles.dueCreatedAmount}>{formatINRWhole(dueCreated)}</Text>
               )}
             </View>
 
@@ -576,7 +588,7 @@ export default function AddPurchaseScreen({ route, navigation }) {
                   <Ionicons name="information-circle-outline" size={r.scale(16)} color={COLORS.textTertiary} style={styles.infoIcon} />
                 </TouchableOpacity>
               </View>
-              <Text {...TEXT_PROPS} style={styles.totalValue}>{formatINR(updatedBalance)}</Text>
+              <Text {...TEXT_PROPS} style={styles.totalValue}>{formatINRWhole(updatedBalance)}</Text>
             </View>
           </View>
         </ScrollView>
@@ -600,10 +612,10 @@ export default function AddPurchaseScreen({ route, navigation }) {
   );
 }
 
-const COL_NAME_FLEX = 1.85;
-const COL_PRICE_FLEX = 1.15;
-const COL_DISCOUNT_FLEX = 1.5;
-const COL_NET_FLEX = 1.35;
+const COL_NAME_FLEX = 1.75;
+const COL_PRICE_FLEX = 1.25;
+const COL_DISCOUNT_FLEX = 1.4;
+const COL_NET_FLEX = 1.4;
 
 const makeStyles = (r, footerH, insets) => StyleSheet.create({
   flex: { flex: 1 },
@@ -626,7 +638,7 @@ const makeStyles = (r, footerH, insets) => StyleSheet.create({
     letterSpacing: -0.5,
   },
   scrollContent: {
-    paddingHorizontal: r.moderate(16),
+    paddingHorizontal: r.isSmallPhone ? r.moderate(10) : r.moderate(16),
     paddingTop: r.moderate(4),
     paddingBottom: footerH + 16,
   },
@@ -648,6 +660,7 @@ const makeStyles = (r, footerH, insets) => StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    minWidth: 0,
   },
   avatarCircle: {
     width: r.scale(48),
@@ -660,6 +673,7 @@ const makeStyles = (r, footerH, insets) => StyleSheet.create({
   },
   customerTextBlock: {
     flex: 1,
+    minWidth: 0,
   },
   customerName: {
     fontSize: r.font(15),
@@ -700,7 +714,7 @@ const makeStyles = (r, footerH, insets) => StyleSheet.create({
   card: {
     backgroundColor: COLORS.surface,
     borderRadius: r.moderate(14),
-    padding: r.moderate(16),
+    padding: r.isSmallPhone ? r.moderate(10) : r.moderate(16),
     marginBottom: r.moderate(20),
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
@@ -714,9 +728,20 @@ const makeStyles = (r, footerH, insets) => StyleSheet.create({
     paddingBottom: r.moderate(4),
   },
   tableHeaderCell: {
-    fontSize: r.font(12),
+    fontSize: r.font(11.5),
     fontWeight: '600',
     color: COLORS.textSecondary,
+    minWidth: 0,
+  },
+  headerTextLeft: {
+    paddingLeft: r.scale(2) + 1.5,
+  },
+  headerTextRight: {
+    paddingRight: r.scale(2) + 1.5,
+  },
+  headerNetTotal: {
+    textAlign: 'right',
+    flex: 1,
     minWidth: 0,
   },
   tableHeaderDivider: {
@@ -758,6 +783,7 @@ const makeStyles = (r, footerH, insets) => StyleSheet.create({
     flex: 1,
     minWidth: 0,
     textAlign: 'right',
+    paddingRight: r.scale(2),
   },
   cellNetTotal: {
     fontSize: r.font(14),
@@ -767,8 +793,13 @@ const makeStyles = (r, footerH, insets) => StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
-  removeBtn: {
+  removeSlot: {
+    width: r.scale(22),
     marginLeft: r.moderate(2),
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  removeBtn: {
     width: r.scale(22),
     height: r.scale(22),
     justifyContent: 'center',
@@ -777,16 +808,16 @@ const makeStyles = (r, footerH, insets) => StyleSheet.create({
   discountCell: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-end',
     flex: 1,
     minWidth: 0,
   },
   modeChip: {
     backgroundColor: COLORS.primaryLight,
     borderRadius: r.moderate(6),
-    paddingHorizontal: r.moderate(4),
+    paddingHorizontal: r.moderate(3),
     paddingVertical: r.moderate(2),
-    marginLeft: r.moderate(2),
+    marginLeft: r.scale(2),
     minWidth: r.scale(20),
     alignItems: 'center',
     justifyContent: 'center',

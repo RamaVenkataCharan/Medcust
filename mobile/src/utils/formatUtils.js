@@ -16,6 +16,22 @@ export function formatINR(amount) {
 }
 
 /**
+ * Formats a number as Indian Rupee string rounded to whole rupees (no decimals).
+ * NOTE: Displayed totals are rounded for display only; underlying calculations and
+ * saved payloads retain exact paise precision.
+ * e.g. 125000.50 → "₹1,25,001" or 82.50 → "₹83" or -50 → "-₹50"
+ */
+export function formatINRWhole(amount) {
+  const num = parseFloat(amount) || 0;
+  const rounded = Math.round(Math.abs(num));
+  const formatted = rounded.toLocaleString('en-IN', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  });
+  return num < 0 ? `-₹${formatted}` : `₹${formatted}`;
+}
+
+/**
  * Formats a phone number as "98765 43210" (5+5 split, last 10 digits).
  */
 export function formatPhone(phone) {

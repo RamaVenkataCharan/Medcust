@@ -56,12 +56,12 @@ describe('AddPurchaseScreen Discount Calculations', () => {
     // Paid Now 25
     fireEvent.changeText(await screen.findByTestId('paidNowInput'), '25');
 
-    // Assert on-screen Subtotal 90.00, Discount -7.50, Grand Total 82.50, Due Created 57.50, Updated Balance 122.50
-    expect(await screen.findByText('₹90.00')).toBeTruthy();
-    expect(await screen.findByText('−₹7.50')).toBeTruthy();
-    expect(await screen.findByText('₹82.50')).toBeTruthy();
-    expect(await screen.findByText('₹57.50')).toBeTruthy();
-    expect(await screen.findByText('₹122.50')).toBeTruthy();
+    // Assert on-screen Subtotal 90, Discount -8, Grand Total 83, Due Created 58, Updated Balance 123
+    expect(await screen.findByText('₹90')).toBeTruthy();
+    expect(await screen.findByText('−₹8')).toBeTruthy();
+    expect(await screen.findByText('₹83')).toBeTruthy();
+    expect(await screen.findByText('₹58')).toBeTruthy();
+    expect(await screen.findByText('₹123')).toBeTruthy();
 
     // Now trigger Save and assert DB call
     fireEvent.press(await screen.findByText('Save Purchase'));
@@ -104,12 +104,12 @@ describe('AddPurchaseScreen Discount Calculations', () => {
     // Paid Now 25
     fireEvent.changeText(await screen.findByTestId('paidNowInput'), '25');
 
-    // Assert on-screen Subtotal 90.00, Discount -7.50, Grand Total 82.50, Due Created 57.50, Updated Balance 122.50
-    expect(await screen.findByText('₹90.00')).toBeTruthy();
-    expect(await screen.findByText('−₹7.50')).toBeTruthy();
-    expect(await screen.findByText('₹82.50')).toBeTruthy();
-    expect(await screen.findByText('₹57.50')).toBeTruthy();
-    expect(await screen.findByText('₹122.50')).toBeTruthy();
+    // Assert on-screen Subtotal 90, Discount -8, Grand Total 83, Due Created 58, Updated Balance 123
+    expect(await screen.findByText('₹90')).toBeTruthy();
+    expect(await screen.findByText('−₹8')).toBeTruthy();
+    expect(await screen.findByText('₹83')).toBeTruthy();
+    expect(await screen.findByText('₹58')).toBeTruthy();
+    expect(await screen.findByText('₹123')).toBeTruthy();
 
     // Trigger Save and assert DB call
     fireEvent.press(await screen.findByText('Save Purchase'));
@@ -134,11 +134,11 @@ describe('AddPurchaseScreen Discount Calculations', () => {
     fireEvent.changeText(await screen.findByTestId('medicineDiscount_0'), '5');
     fireEvent.changeText(await screen.findByTestId('paidNowInput'), '0');
 
-    // Expect Net Total 118.75, Discount -6.25, Grand Total 118.75, Subtotal 125.00
-    const matches118 = await screen.findAllByText('₹118.75');
-    expect(matches118.length).toBeGreaterThanOrEqual(2); // Appears in row Net Total and Grand Total
-    expect(await screen.findByText('−₹6.25')).toBeTruthy();
-    expect(await screen.findByText('₹125.00')).toBeTruthy();
+    // Expect Net Total 119, Discount -6, Grand Total 119, Subtotal 125
+    const matches119 = await screen.findAllByText('₹119');
+    expect(matches119.length).toBeGreaterThanOrEqual(2); // Appears in row Net Total and Grand Total
+    expect(await screen.findByText('−₹6')).toBeTruthy();
+    expect(await screen.findByText('₹125')).toBeTruthy();
 
     // Save and check payload (saved discount 6.25)
     fireEvent.press(await screen.findByText('Save Purchase'));
@@ -171,4 +171,22 @@ describe('AddPurchaseScreen Discount Calculations', () => {
     fireEvent.press(saveBtn);
     expect(database.addPurchaseEntry).not.toHaveBeenCalled();
   }, 15000);
+
+  it('renders customer card with name only, omitting phone number and separator', async () => {
+    database.getCustomerById.mockReturnValue({
+      customer_id: 1,
+      name: 'giri',
+      phone_number: '9848012345',
+      total_due: 65,
+    });
+
+    await customRender(
+      <AddPurchaseScreen navigation={mockNavigation} route={{ params: { customerId: 1, customerName: 'giri' } }} />
+    );
+
+    expect(await screen.findByText('giri')).toBeTruthy();
+    expect(screen.queryByText(/98480/)).toBeNull();
+    expect(screen.queryByText(/12345/)).toBeNull();
+    expect(screen.queryByText(/·/)).toBeNull();
+  });
 });
