@@ -6,9 +6,15 @@ import {
   TouchableOpacity,
   StatusBar,
   ActivityIndicator,
-  StyleSheet
+  StyleSheet,
+  Animated,
+  Keyboard,
+  AccessibilityInfo,
+  Platform
 } from 'react-native';
 import CustomTextInput from '../components/CustomTextInput';
+
+const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -41,6 +47,63 @@ export default function HomeScreen({ navigation }) {
   const timerRef = useRef(null);
   const queryRef = useRef(query);
   queryRef.current = query;
+
+  // FAB animation values & state
+  const entranceAnim = useRef(new Animated.Value(0)).current;
+  const pressAnim = useRef(new Animated.Value(1)).current;
+  const scrollAnim = useRef(new Animated.Value(1)).current;
+  const [isPressed, setIsPressed] = useState(false);
+  const [reduceMotion, setReduceMotion] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const scrollY = useRef(0);
+  const scrollTimeout = useRef(null);
+  const isCollapsed = useRef(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (AccessibilityInfo && AccessibilityInfo.isReduceMotionEnabled) {
+      AccessibilityInfo.isReduceMotionEnabled()
+        .then((enabled) => {
+          if (isMounted && enabled) {
+            setReduceMotion(true);
+            entranceAnim.setValue(1);
+            pressAnim.setValue(1);
+            scrollAnim.setValue(1);
+          }
+        })
+        .catch(() => {});
+    }
+
+    const sub = AccessibilityInfo?.addEventListener?.('reduceMotionChanged', (enabled) => {
+      if (isMounted) {
+        setReduceMotion(!!enabled);
+        if (enabled) {
+          entranceAnim.setValue(1);
+          pressAnim.setValue(1);
+          scrollAnim.setValue(1);
+        }
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      if (sub?.remove) sub.remove();
+    };
+  }, [entranceAnim, pressAnim, scrollAnim]);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+      if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
+    };
+  }, []);
 
   const checkLicenseAlerts = useCallback(() => {
     try {
@@ -180,12 +243,130 @@ export default function HomeScreen({ navigation }) {
       loadData(true);
       checkLicenseAlerts();
       checkLegalAndBackupNotices();
+
+      let popAnimation = null;
+      if (reduceMotion) {
+        entranceAnim.setValue(1);
+      } else {
+        entranceAnim.setValue(0);
+        popAnimation = Animated.sequence([
+          Animated.delay(150),
+          Animated.spring(entranceAnim, {
+            toValue: 1,
+            friction: 6,
+            tension: 120,
+            useNativeDriver: Platform.OS !== 'web',
+          }),
+        ]);
+        popAnimation.start();
+      }
+
       return () => {
         reqCounter.current++;
         if (timerRef.current) clearTimeout(timerRef.current);
+        if (popAnimation) popAnimation.stop();
       };
-    }, [loadData, checkLicenseAlerts, checkLegalAndBackupNotices]) 
+    }, [loadData, checkLicenseAlerts, checkLegalAndBackupNotices, reduceMotion, entranceAnim]) 
   );
+
+  const handlePressIn = useCallback(() => {
+    setIsPressed(true);
+    if (!reduceMotion) {
+      Animated.timing(pressAnim, {
+        toValue: 0.92,
+        duration: 80,
+        useNativeDriver: Platform.OS !== 'web',
+      }).start();
+    }
+  }, [reduceMotion, pressAnim]);
+
+  const handlePressOut = useCallback(() => {
+    setIsPressed(false);
+    if (!reduceMotion) {
+      Animated.spring(pressAnim, {
+        toValue: 1,
+        friction: 5,
+        tension: 150,
+        useNativeDriver: Platform.OS !== 'web',
+      }).start();
+    }
+  }, [reduceMotion, pressAnim]);
+
+  const handleScroll = useCallback((event) => {
+    if (reduceMotion) return;
+    const currentY = event.nativeEvent?.contentOffset?.y ?? 0;
+    const diff = currentY - scrollY.current;
+    scrollY.current = currentY;
+
+    if (scrollTimeout.current) {
+      clearTimeout(scrollTimeout.current);
+    }
+
+    if (diff > 8 && currentY > 20) {
+      if (!isCollapsed.current) {
+        isCollapsed.current = true;
+        Animated.timing(scrollAnim, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: Platform.OS !== 'web',
+        }).start();
+      }
+    } else if (diff < -8 || currentY <= 10) {
+      if (isCollapsed.current) {
+        isCollapsed.current = false;
+        Animated.timing(scrollAnim, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: Platform.OS !== 'web',
+        }).start();
+      }
+    }
+
+    scrollTimeout.current = setTimeout(() => {
+      if (isCollapsed.current) {
+        isCollapsed.current = false;
+        Animated.timing(scrollAnim, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: Platform.OS !== 'web',
+        }).start();
+      }
+    }, 250);
+  }, [reduceMotion, scrollAnim]);
+
+  const handleScrollEnd = useCallback(() => {
+    if (reduceMotion) return;
+    if (scrollTimeout.current) {
+      clearTimeout(scrollTimeout.current);
+    }
+    if (isCollapsed.current) {
+      isCollapsed.current = false;
+      Animated.timing(scrollAnim, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: Platform.OS !== 'web',
+      }).start();
+    }
+  }, [reduceMotion, scrollAnim]);
+
+  const entranceScale = entranceAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.6, 1],
+  });
+
+  const entranceOpacity = entranceAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
+
+  const totalScale = Animated.multiply(entranceScale, pressAnim);
+
+  const labelOpacity = scrollAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
 
   const renderCustomerItem = ({ item }) => {
     const totalDue = parseFloat(item.total_due || 0);
@@ -473,20 +654,57 @@ export default function HomeScreen({ navigation }) {
           renderItem={renderCustomerItem}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
+          onMomentumScrollEnd={handleScrollEnd}
+          onScrollEndDrag={handleScrollEnd}
         />
       )}
 
       {/* Floating Add Customer Button */}
-      {customers.length > 0 && (
-        <TouchableOpacity
+      {customers.length > 0 && !keyboardVisible && (
+        <AnimatedTouchableOpacity
           testID="home-fab-add-customer"
-          style={styles.fab}
-          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel="Add customer"
+          activeOpacity={0.92}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={[
+            styles.fab,
+            isPressed && styles.fabPressed,
+            reduceMotion
+              ? null
+              : {
+                  opacity: entranceOpacity,
+                  transform: [{ scale: totalScale }],
+                },
+          ]}
+          onPressIn={handlePressIn}
+          onPressOut={handlePressOut}
           onPress={() => navigation.navigate('AddCustomer', { initialPhoneOrName: query.trim() })}
         >
           <Ionicons name="person-add" size={r.scale(20)} color={COLORS.textInverted} />
-          <Text {...TEXT_PROPS} style={styles.fabText}>+ Add Customer</Text>
-        </TouchableOpacity>
+          <Animated.View
+            style={
+              reduceMotion
+                ? null
+                : {
+                    opacity: labelOpacity,
+                    transform: [
+                      {
+                        scale: scrollAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0.01, 1],
+                          extrapolate: 'clamp',
+                        }),
+                      },
+                    ],
+                  }
+            }
+          >
+            <Text {...TEXT_PROPS} style={styles.fabText}>+ Add Customer</Text>
+          </Animated.View>
+        </AnimatedTouchableOpacity>
       )}
     </ScreenContainer>
   );
@@ -562,7 +780,7 @@ const makeStyles = (r, insets) => StyleSheet.create({
   },
   listContent: {
     paddingHorizontal: r.moderate(20),
-    paddingBottom: insets.bottom + r.moderate(85), // fab padding
+    paddingBottom: insets.bottom + Math.max(r.moderate(88), 88), // fab padding: button height (56) + 32 = 88
     paddingTop: r.moderate(4),
   },
   customerCard: {
@@ -679,17 +897,26 @@ const makeStyles = (r, insets) => StyleSheet.create({
     right: 16,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: COLORS.primary,
+    height: 56,
+    minHeight: 56,
+    minWidth: 56,
     paddingVertical: r.moderate(12),
     paddingHorizontal: r.moderate(20),
     borderRadius: r.moderate(999),
     gap: r.scale(8),
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.18,
-    shadowRadius: 6,
-    elevation: 4,
-    minHeight: r.touch,
+    shadowOpacity: 0.28,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  fabPressed: {
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.16,
+    shadowRadius: 4,
+    elevation: 3,
   },
   fabText: {
     fontSize: r.font(15),
