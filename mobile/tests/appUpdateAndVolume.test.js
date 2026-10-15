@@ -2,6 +2,11 @@ import { Platform } from 'react-native';
 import * as database from '../src/db/database';
 import { validateBackupJson, verifyImport } from '../src/utils/importValidator';
 
+// NOTE: These automated unit & scale tests run in Jest using the WEB_FALLBACK
+// (in-memory / localStorage) driver provided by src/db/database.js.
+// The native-SQLite driver (expo-sqlite on Android/iOS) and real-APK-update cases
+// (Android Package Manager in-place update over an existing APK) are NOT-VERIFIABLE-WITHOUT-DEVICE.
+
 // Set up mock window.localStorage for Node/Jest environment
 const storageStore = {};
 global.window = {
@@ -19,8 +24,9 @@ global.window = {
   },
 };
 
-describe('App Update & Realistic Volume Performance Audit', () => {
+describe('App Update & Realistic Volume Performance Audit (WEB_FALLBACK Driver)', () => {
   beforeEach(() => {
+    // Driver under test in Jest: WEB_FALLBACK (native-SQLite requires device)
     Platform.OS = 'web';
     global.window.localStorage.clear();
     database.initDatabase();
