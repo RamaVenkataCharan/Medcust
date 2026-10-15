@@ -187,7 +187,7 @@ export default function ProfileScreen({ navigation }) {
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <ScrollView contentContainerStyle={styles.content}>
+        <ScrollView testID="profile-scroll" contentContainerStyle={styles.content}>
           {/* Shop Details Card */}
           <View style={styles.sectionCard}>
             <View style={styles.sectionHeader}>

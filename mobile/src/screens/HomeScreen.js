@@ -467,6 +467,7 @@ export default function HomeScreen({ navigation }) {
         </View>
       ) : (
         <FlatList
+          testID="home-customer-list"
           data={customers}
           keyExtractor={(item) => String(item.customer_id)}
           renderItem={renderCustomerItem}
@@ -478,6 +479,7 @@ export default function HomeScreen({ navigation }) {
       {/* Floating Add Customer Button */}
       {customers.length > 0 && (
         <TouchableOpacity
+          testID="home-fab-add-customer"
           style={styles.fab}
           activeOpacity={0.85}
           onPress={() => navigation.navigate('AddCustomer', { initialPhoneOrName: query.trim() })}

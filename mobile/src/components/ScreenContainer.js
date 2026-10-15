@@ -7,10 +7,10 @@ import { COLORS } from '../constants/theme';
 
 // Handles top (notch / status bar / camera cutout) and left/right (landscape cutouts).
 // The bottom edge is handled by <StickyFooter> or by the scroll content padding.
-export default function ScreenContainer({ children, style, edges = ['top', 'left', 'right'] }) {
+export default function ScreenContainer({ children, style, edges = ['top', 'left', 'right'], testID = 'screen-container' }) {
   const r = useResponsive();
   return (
-    <SafeAreaView style={styles.root} edges={edges}>
+    <SafeAreaView testID={testID} style={styles.root} edges={edges}>
       <StatusBar style="dark" backgroundColor="transparent" translucent />
       <View style={[styles.inner, { maxWidth: r.contentMaxWidth }, style]}>{children}</View>
     </SafeAreaView>

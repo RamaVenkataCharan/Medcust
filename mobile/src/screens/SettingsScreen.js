@@ -125,7 +125,7 @@ export default function SettingsScreen({ navigation }) {
         <Text {...TEXT_PROPS} style={styles.headerTitle}>Settings</Text>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView testID="settings-scroll" contentContainerStyle={styles.content}>
         {/* Backup & Data Section */}
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeader}>

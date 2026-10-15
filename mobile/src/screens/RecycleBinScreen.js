@@ -102,6 +102,7 @@ export default function RecycleBinScreen({ navigation }) {
       </View>
 
       <FlatList
+        testID="recycle-bin-list"
         data={customers}
         keyExtractor={(item) => item.customer_id.toString()}
         renderItem={renderItem}

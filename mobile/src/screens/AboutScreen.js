@@ -61,7 +61,7 @@ export default function AboutScreen({ navigation }) {
         <Text {...TEXT_PROPS} style={styles.headerTitle}>About MedTrack</Text>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView testID="about-scroll" contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* App Info Card */}
         <View style={styles.appInfoCard}>
           <View style={styles.appIconCircle}>

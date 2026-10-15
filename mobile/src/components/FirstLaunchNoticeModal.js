@@ -89,6 +89,8 @@ const makeStyles = (r, insets) => StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
     paddingTop: insets.top + r.moderate(16),
+    paddingLeft: insets.left,
+    paddingRight: insets.right,
   },
   header: {
     alignItems: 'center',

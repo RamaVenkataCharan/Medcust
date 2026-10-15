@@ -249,6 +249,7 @@ export default function RecordPaymentScreen({ route, navigation }) {
         </View>
 
         <ScrollView
+          testID="record-payment-scroll"
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}

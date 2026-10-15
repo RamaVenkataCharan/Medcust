@@ -420,6 +420,7 @@ export default function AddPurchaseScreen({ route, navigation }) {
         </View>
 
         <ScrollView
+          testID="add-purchase-scroll"
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
