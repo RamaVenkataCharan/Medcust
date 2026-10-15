@@ -68,9 +68,15 @@ describe('Phase C: Render Smoke Tests', () => {
   };
 
   describe('HomeScreen', () => {
-    it('renders empty data', () => {
+    it('renders empty data with exact "Medical Khata Book" subtitle', async () => {
       database.getAllCustomers.mockReturnValue([]);
-      customRender(<HomeScreen navigation={mockNavigation} />);
+      database.getActiveDriverName.mockReturnValue('Web Fallback');
+      database.getShopProfile.mockReturnValue({ shop_name: 'MedTrack Pharmacy' });
+      await customRender(<HomeScreen navigation={mockNavigation} />);
+
+      expect(screen.getByText('Medical Khata Book')).toBeTruthy();
+      expect(screen.queryByText(/Web Fallback/i)).toBeNull();
+      expect(screen.queryByText(/MedTrack Pharmacy/i)).toBeNull();
     });
 
     it('renders normal data with formatINR two decimal due', async () => {

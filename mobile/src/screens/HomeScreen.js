@@ -13,7 +13,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../constants/theme';
-import { searchCustomers, getActiveDriverName, getShopProfile } from '../db/database';
+import { searchCustomers } from '../db/database';
 import { exportKhataBackup } from '../services/exportService';
 import { useResponsive, TEXT_PROPS } from '../utils/responsive';
 import { formatINR } from '../utils/formatUtils';
@@ -23,7 +23,6 @@ export default function HomeScreen({ navigation }) {
   const [query, setQuery] = useState('');
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [shopName, setShopName] = useState('');
   const [exporting, setExporting] = useState(false);
 
   const r = useResponsive();
@@ -43,13 +42,6 @@ export default function HomeScreen({ navigation }) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
-
-    try {
-      const sp = getShopProfile();
-      if (sp?.shop_name) {
-        setShopName(sp.shop_name);
-      }
-    } catch (e) {}
 
     // Fire immediately if query is cleared or skipDebounce is true
     if (q === '' || skipDebounce) {
@@ -149,7 +141,7 @@ export default function HomeScreen({ navigation }) {
         <View style={{ flex: 1, marginRight: r.moderate(8) }}>
           <Text {...TEXT_PROPS} style={styles.appTitle}>MedTrack</Text>
           <Text {...TEXT_PROPS} style={styles.appSubtitle} numberOfLines={1}>
-            {shopName ? `${shopName} • ` : ''}Medical Khata Book • {getActiveDriverName().includes('SQLITE') ? 'Native SQLite' : 'Web Fallback'}
+            Medical Khata Book
           </Text>
         </View>
 
