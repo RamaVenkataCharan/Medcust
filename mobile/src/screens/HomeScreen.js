@@ -13,17 +13,25 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../constants/theme';
-import { searchCustomers, getActiveDriverName, getShopProfile } from '../db/database';
+import { searchCustomers, getShopProfile, getAppMeta, setAppMeta } from '../db/database';
 import { exportKhataBackup } from '../services/exportService';
 import { useResponsive, TEXT_PROPS } from '../utils/responsive';
+import { formatINR } from '../utils/formatUtils';
 import ScreenContainer from '../components/ScreenContainer';
+import { getLicenseStatus, formatLicenseDate } from '../utils/licenseReminders';
+import { rescheduleAllLicenseReminders } from '../services/licenseNotifications';
+import { LEGAL_TEXT_VERSION } from '../constants/legalText';
+import FirstLaunchNoticeModal from '../components/FirstLaunchNoticeModal';
+import { shouldShowBackupReminder } from '../utils/backupReminder';
 
 export default function HomeScreen({ navigation }) {
   const [query, setQuery] = useState('');
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [shopName, setShopName] = useState('');
   const [exporting, setExporting] = useState(false);
+  const [licenseAlerts, setLicenseAlerts] = useState({ shop: null, pharmacist: null });
+  const [showFirstLaunchNotice, setShowFirstLaunchNotice] = useState(false);
+  const [showBackupReminder, setShowBackupReminder] = useState(false);
 
   const r = useResponsive();
   const insets = useSafeAreaInsets();
@@ -34,6 +42,89 @@ export default function HomeScreen({ navigation }) {
   const queryRef = useRef(query);
   queryRef.current = query;
 
+  const checkLicenseAlerts = useCallback(() => {
+    try {
+      const sp = getShopProfile();
+      if (!sp) {
+        setLicenseAlerts({ shop: null, pharmacist: null });
+        return;
+      }
+      const shopStatus = getLicenseStatus(sp.shop_license_validity);
+      const pharmStatus = getLicenseStatus(sp.pharmacist_license_validity);
+
+      setLicenseAlerts({
+        shop:
+          shopStatus.state === 'expired' || shopStatus.state === 'expiring'
+            ? {
+                status: shopStatus,
+                dateFormatted: formatLicenseDate(sp.shop_license_validity),
+              }
+            : null,
+        pharmacist:
+          pharmStatus.state === 'expired' || pharmStatus.state === 'expiring'
+            ? {
+                status: pharmStatus,
+                dateFormatted: formatLicenseDate(sp.pharmacist_license_validity),
+              }
+            : null,
+      });
+
+      rescheduleAllLicenseReminders(sp).catch(() => {});
+    } catch (e) {
+      console.warn('Error checking license alerts:', e);
+    }
+  }, []);
+
+  const checkLegalAndBackupNotices = useCallback(() => {
+    try {
+      // 1. First-launch notice check
+      const acceptedVersion = getAppMeta('legal_terms_accepted_version');
+      if (acceptedVersion !== LEGAL_TEXT_VERSION) {
+        setShowFirstLaunchNotice(true);
+      } else {
+        setShowFirstLaunchNotice(false);
+      }
+
+      // 2. 14-day backup reminder check
+      const lastExportedAt = getAppMeta('last_backup_exported_at');
+      const dismissedAt = getAppMeta('backup_reminder_dismissed_at');
+      const needsReminder = shouldShowBackupReminder(lastExportedAt, dismissedAt);
+      setShowBackupReminder(needsReminder);
+    } catch (e) {
+      console.warn('Error checking legal/backup notices:', e);
+    }
+  }, []);
+
+  const handleAcceptFirstLaunchNotice = () => {
+    try {
+      setAppMeta('legal_terms_accepted_version', LEGAL_TEXT_VERSION);
+      setAppMeta('legal_terms_accepted_at', new Date().toISOString());
+      setShowFirstLaunchNotice(false);
+    } catch (e) {
+      setShowFirstLaunchNotice(false);
+    }
+  };
+
+  const handleDismissBackupReminder = () => {
+    try {
+      setAppMeta('backup_reminder_dismissed_at', new Date().toISOString());
+      setShowBackupReminder(false);
+    } catch (e) {
+      setShowBackupReminder(false);
+    }
+  };
+
+  const handleExportBackupFromBanner = async () => {
+    try {
+      const res = await exportKhataBackup();
+      if (res && res.success) {
+        setShowBackupReminder(false);
+      }
+    } catch (e) {
+      console.warn('Error exporting from banner:', e);
+    }
+  };
+
   const loadData = useCallback((skipDebounce = false) => {
     const q = queryRef.current;
     const currentReq = ++reqCounter.current;
@@ -42,13 +133,6 @@ export default function HomeScreen({ navigation }) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
-
-    try {
-      const sp = getShopProfile();
-      if (sp?.shop_name) {
-        setShopName(sp.shop_name);
-      }
-    } catch (e) {}
 
     // Fire immediately if query is cleared or skipDebounce is true
     if (q === '' || skipDebounce) {
@@ -94,11 +178,13 @@ export default function HomeScreen({ navigation }) {
   useFocusEffect(
     useCallback(() => {
       loadData(true);
+      checkLicenseAlerts();
+      checkLegalAndBackupNotices();
       return () => {
         reqCounter.current++;
         if (timerRef.current) clearTimeout(timerRef.current);
       };
-    }, [loadData]) 
+    }, [loadData, checkLicenseAlerts, checkLegalAndBackupNotices]) 
   );
 
   const renderCustomerItem = ({ item }) => {
@@ -122,7 +208,7 @@ export default function HomeScreen({ navigation }) {
               styles.dueBadgeText,
               hasDue ? styles.dueBadgeTextAlert : hasCredit ? styles.dueBadgeTextCredit : styles.dueBadgeTextClear
             ]}>
-              {hasDue ? `₹${totalDue.toFixed(0)} due` : hasCredit ? `₹${Math.abs(totalDue).toFixed(0)} credit` : 'All clear'}
+              {hasDue ? `${formatINR(totalDue)} due` : hasCredit ? `${formatINR(Math.abs(totalDue))} credit` : 'All clear'}
             </Text>
           </View>
         </View>
@@ -143,12 +229,17 @@ export default function HomeScreen({ navigation }) {
 
   return (
     <ScreenContainer>
+      <FirstLaunchNoticeModal
+        visible={showFirstLaunchNotice}
+        onAccept={handleAcceptFirstLaunchNotice}
+      />
+
       {/* Notebook Header */}
       <View style={styles.header}>
         <View style={{ flex: 1, marginRight: r.moderate(8) }}>
           <Text {...TEXT_PROPS} style={styles.appTitle}>MedTrack</Text>
           <Text {...TEXT_PROPS} style={styles.appSubtitle} numberOfLines={1}>
-            {shopName ? `${shopName} • ` : ''}Medical Khata Book • {getActiveDriverName().includes('SQLITE') ? 'Native SQLite' : 'Web Fallback'}
+            Medical Khata Book
           </Text>
         </View>
 
@@ -171,6 +262,164 @@ export default function HomeScreen({ navigation }) {
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* License Expiry Reminders */}
+      {(licenseAlerts.shop || licenseAlerts.pharmacist) && (
+        <View style={styles.licenseBannersContainer}>
+          {licenseAlerts.shop && (
+            <View
+              style={[
+                styles.licenseBannerCard,
+                licenseAlerts.shop.status.state === 'expired' || licenseAlerts.shop.status.isExpiringToday
+                  ? styles.licenseBannerExpired
+                  : styles.licenseBannerAmber,
+              ]}
+              testID="banner-license-shop"
+            >
+              <Ionicons
+                name={
+                  licenseAlerts.shop.status.state === 'expired' || licenseAlerts.shop.status.isExpiringToday
+                    ? 'alert-circle'
+                    : 'warning-outline'
+                }
+                size={r.scale(20)}
+                color={
+                  licenseAlerts.shop.status.state === 'expired' || licenseAlerts.shop.status.isExpiringToday
+                    ? '#C62828'
+                    : '#A15C07'
+                }
+                style={{ marginRight: r.scale(8) }}
+              />
+              <View style={{ flex: 1, marginRight: r.scale(8) }}>
+                <Text
+                  {...TEXT_PROPS}
+                  style={[
+                    styles.licenseBannerText,
+                    licenseAlerts.shop.status.state === 'expired' || licenseAlerts.shop.status.isExpiringToday
+                      ? styles.licenseBannerExpiredText
+                      : styles.licenseBannerAmberText,
+                  ]}
+                  numberOfLines={2}
+                >
+                  {licenseAlerts.shop.status.state === 'expired'
+                    ? `Drug License expired on ${licenseAlerts.shop.dateFormatted}`
+                    : licenseAlerts.shop.status.isExpiringToday
+                    ? `Drug License expires today (${licenseAlerts.shop.dateFormatted})`
+                    : `Drug License expires in ${licenseAlerts.shop.status.daysLeft} ${licenseAlerts.shop.status.daysLeft === 1 ? 'day' : 'days'} (${licenseAlerts.shop.dateFormatted})`}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[
+                  styles.licenseBannerBtn,
+                  licenseAlerts.shop.status.state === 'expired' || licenseAlerts.shop.status.isExpiringToday
+                    ? styles.licenseBannerExpiredBtn
+                    : styles.licenseBannerAmberBtn,
+                ]}
+                onPress={() => navigation.navigate('Profile')}
+                testID="btn-banner-shop-update"
+                activeOpacity={0.8}
+              >
+                <Text {...TEXT_PROPS} style={styles.licenseBannerBtnText}>Update</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {licenseAlerts.pharmacist && (
+            <View
+              style={[
+                styles.licenseBannerCard,
+                licenseAlerts.pharmacist.status.state === 'expired' || licenseAlerts.pharmacist.status.isExpiringToday
+                  ? styles.licenseBannerExpired
+                  : styles.licenseBannerAmber,
+              ]}
+              testID="banner-license-pharmacist"
+            >
+              <Ionicons
+                name={
+                  licenseAlerts.pharmacist.status.state === 'expired' || licenseAlerts.pharmacist.status.isExpiringToday
+                    ? 'alert-circle'
+                    : 'warning-outline'
+                }
+                size={r.scale(20)}
+                color={
+                  licenseAlerts.pharmacist.status.state === 'expired' || licenseAlerts.pharmacist.status.isExpiringToday
+                    ? '#C62828'
+                    : '#A15C07'
+                }
+                style={{ marginRight: r.scale(8) }}
+              />
+              <View style={{ flex: 1, marginRight: r.scale(8) }}>
+                <Text
+                  {...TEXT_PROPS}
+                  style={[
+                    styles.licenseBannerText,
+                    licenseAlerts.pharmacist.status.state === 'expired' || licenseAlerts.pharmacist.status.isExpiringToday
+                      ? styles.licenseBannerExpiredText
+                      : styles.licenseBannerAmberText,
+                  ]}
+                  numberOfLines={2}
+                >
+                  {licenseAlerts.pharmacist.status.state === 'expired'
+                    ? `Pharmacist Reg. expired on ${licenseAlerts.pharmacist.dateFormatted}`
+                    : licenseAlerts.pharmacist.status.isExpiringToday
+                    ? `Pharmacist Reg. expires today (${licenseAlerts.pharmacist.dateFormatted})`
+                    : `Pharmacist Reg. expires in ${licenseAlerts.pharmacist.status.daysLeft} ${licenseAlerts.pharmacist.status.daysLeft === 1 ? 'day' : 'days'} (${licenseAlerts.pharmacist.dateFormatted})`}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[
+                  styles.licenseBannerBtn,
+                  licenseAlerts.pharmacist.status.state === 'expired' || licenseAlerts.pharmacist.status.isExpiringToday
+                    ? styles.licenseBannerExpiredBtn
+                    : styles.licenseBannerAmberBtn,
+                ]}
+                onPress={() => navigation.navigate('Profile')}
+                testID="btn-banner-pharmacist-update"
+                activeOpacity={0.8}
+              >
+                <Text {...TEXT_PROPS} style={styles.licenseBannerBtnText}>Update</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* 14-day Backup Reminder Banner */}
+      {showBackupReminder && (
+        <View style={styles.backupReminderContainer}>
+          <View style={styles.backupReminderCard} testID="banner-backup-reminder">
+            <Ionicons
+              name="cloud-upload-outline"
+              size={r.scale(20)}
+              color="#1E40AF"
+              style={{ marginRight: r.scale(8) }}
+            />
+            <View style={{ flex: 1, marginRight: r.scale(8) }}>
+              <Text {...TEXT_PROPS} style={styles.backupReminderText}>
+                Your data is only on this phone. Export a backup.
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: r.scale(6) }}>
+              <TouchableOpacity
+                style={styles.backupReminderExportBtn}
+                onPress={handleExportBackupFromBanner}
+                testID="btn-backup-now"
+                activeOpacity={0.8}
+              >
+                <Text {...TEXT_PROPS} style={styles.backupReminderExportBtnText}>Export</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.backupReminderDismissBtn}
+                onPress={handleDismissBackupReminder}
+                testID="btn-dismiss-backup-reminder"
+                accessibilityLabel="Dismiss backup reminder"
+              >
+                <Ionicons name="close" size={r.scale(18)} color="#4B5563" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
 
       {/* Auto-focused Large Search Box */}
       <View style={styles.searchContainer}>
@@ -218,6 +467,7 @@ export default function HomeScreen({ navigation }) {
         </View>
       ) : (
         <FlatList
+          testID="home-customer-list"
           data={customers}
           keyExtractor={(item) => String(item.customer_id)}
           renderItem={renderCustomerItem}
@@ -229,6 +479,7 @@ export default function HomeScreen({ navigation }) {
       {/* Floating Add Customer Button */}
       {customers.length > 0 && (
         <TouchableOpacity
+          testID="home-fab-add-customer"
           style={styles.fab}
           activeOpacity={0.85}
           onPress={() => navigation.navigate('AddCustomer', { initialPhoneOrName: query.trim() })}
@@ -351,8 +602,8 @@ const makeStyles = (r, insets) => StyleSheet.create({
     borderColor: COLORS.dueBadgeBorder,
   },
   dueBadgeCredit: {
-    backgroundColor: '#F0FDF4',
-    borderColor: '#BBF7D0',
+    backgroundColor: COLORS.creditBadgeBg,
+    borderColor: COLORS.creditBadgeBorder,
   },
   dueBadgeClear: {
     backgroundColor: COLORS.clearBadgeBg,
@@ -366,7 +617,7 @@ const makeStyles = (r, insets) => StyleSheet.create({
     color: COLORS.dueBadgeText,
   },
   dueBadgeTextCredit: {
-    color: '#15803D',
+    color: COLORS.creditBadgeText,
   },
   dueBadgeTextClear: {
     color: COLORS.clearBadgeText,
@@ -444,5 +695,98 @@ const makeStyles = (r, insets) => StyleSheet.create({
     fontSize: r.font(15),
     fontWeight: '600',
     color: COLORS.textInverted,
+  },
+  licenseBannersContainer: {
+    paddingHorizontal: r.moderate(20),
+    paddingTop: r.scale(2),
+    paddingBottom: r.scale(4),
+    gap: r.scale(8),
+  },
+  licenseBannerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: r.moderate(10),
+    paddingHorizontal: r.moderate(12),
+    paddingVertical: r.moderate(8),
+    borderWidth: 1,
+  },
+  licenseBannerAmber: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#FCD34D',
+  },
+  licenseBannerExpired: {
+    backgroundColor: '#FEE2E2',
+    borderColor: '#FCA5A5',
+  },
+  licenseBannerText: {
+    fontSize: r.font(12.5),
+    fontWeight: '600',
+    lineHeight: r.font(16),
+  },
+  licenseBannerAmberText: {
+    color: '#92400E',
+  },
+  licenseBannerExpiredText: {
+    color: '#991B1B',
+  },
+  licenseBannerBtn: {
+    paddingHorizontal: r.moderate(10),
+    paddingVertical: r.moderate(5),
+    borderRadius: r.moderate(6),
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: r.touch,
+  },
+  licenseBannerAmberBtn: {
+    backgroundColor: '#D97706',
+  },
+  licenseBannerExpiredBtn: {
+    backgroundColor: '#DC2626',
+  },
+  licenseBannerBtnText: {
+    color: '#FFFFFF',
+    fontSize: r.font(12),
+    fontWeight: '700',
+  },
+  backupReminderContainer: {
+    paddingHorizontal: r.moderate(20),
+    paddingTop: r.scale(2),
+    paddingBottom: r.scale(4),
+  },
+  backupReminderCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: r.moderate(10),
+    paddingHorizontal: r.moderate(12),
+    paddingVertical: r.moderate(8),
+  },
+  backupReminderText: {
+    fontSize: r.font(12.5),
+    fontWeight: '600',
+    color: '#1E3A8A',
+    lineHeight: r.font(16),
+  },
+  backupReminderExportBtn: {
+    backgroundColor: '#2563EB',
+    paddingHorizontal: r.moderate(10),
+    paddingVertical: r.moderate(5),
+    borderRadius: r.moderate(6),
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: r.touch,
+  },
+  backupReminderExportBtnText: {
+    color: '#FFFFFF',
+    fontSize: r.font(12),
+    fontWeight: '700',
+  },
+  backupReminderDismissBtn: {
+    padding: r.moderate(4),
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: r.touch,
   },
 });

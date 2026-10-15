@@ -45,6 +45,10 @@ export const COLORS = {
   clearBadgeText: '#4B5563',
   clearBadgeBorder: '#E5E7EB',
 
+  creditBadgeBg: '#F0FDF4',    // Soft mint green for credit balance
+  creditBadgeBorder: '#BBF7D0',
+  creditBadgeText: '#15803D',
+
   paymentCardBg: '#F0FDF4',     // Soft mint/sage for payment received
   paymentCardBorder: '#BBF7D0',
   paymentGreen: '#15803D',
@@ -102,6 +106,7 @@ export const FONTS = {
 export const GLOBAL_STYLES = {
   noFocusOutline: Platform.select({
     web: {
+      outline: 'none',
       outlineStyle: 'none',
       outlineWidth: 0,
       boxShadow: 'none',

@@ -43,6 +43,12 @@ export async function performAtomicRestore(jsonData) {
   const { restoreDatabaseFromJson } = require('../db/database');
   try {
     await restoreDatabaseFromJson(jsonData);
+    try {
+      const { rescheduleAllLicenseReminders } = require('./licenseNotifications');
+      await rescheduleAllLicenseReminders();
+    } catch (e) {
+      console.warn('Could not reschedule reminders after restore:', e);
+    }
   } catch (err) {
     err.snapshotUri = snapshotUri;
     throw err;

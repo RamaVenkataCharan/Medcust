@@ -68,20 +68,29 @@ describe('Phase C: Render Smoke Tests', () => {
   };
 
   describe('HomeScreen', () => {
-    it('renders empty data', () => {
+    it('renders empty data with exact "Medical Khata Book" subtitle', async () => {
       database.getAllCustomers.mockReturnValue([]);
-      customRender(<HomeScreen navigation={mockNavigation} />);
+      database.getActiveDriverName.mockReturnValue('Web Fallback');
+      database.getShopProfile.mockReturnValue({ shop_name: 'MedTrack Pharmacy' });
+      await customRender(<HomeScreen navigation={mockNavigation} />);
+
+      expect(screen.getByText('Medical Khata Book')).toBeTruthy();
+      expect(screen.queryByText(/Web Fallback/i)).toBeNull();
+      expect(screen.queryByText(/MedTrack Pharmacy/i)).toBeNull();
     });
 
-    it('renders normal data', () => {
+    it('renders normal data with formatINR two decimal due', async () => {
       database.getAllCustomers.mockReturnValue([{ customer_id: 1, name: 'John Doe', phone_number: '1234567890', total_due: 100 }]);
-      customRender(<HomeScreen navigation={mockNavigation} />);
+      database.searchCustomers.mockReturnValue([{ customer_id: 1, name: 'John Doe', phone_number: '1234567890', total_due: 100 }]);
+      await customRender(<HomeScreen navigation={mockNavigation} />);
+      const badge = await screen.findByText('₹100.00 due');
+      expect(badge).toBeTruthy();
     });
 
-    it('renders credit balance (due < 0) as "₹X credit"', async () => {
+    it('renders credit balance (due < 0) as "₹X.XX credit"', async () => {
       database.searchCustomers.mockReturnValue([{ customer_id: 2, name: 'Credit Customer', phone_number: '9848012345', total_due: -150 }]);
       await customRender(<HomeScreen navigation={mockNavigation} />);
-      const badge = await screen.findByText('₹150 credit');
+      const badge = await screen.findByText('₹150.00 credit');
       expect(badge).toBeTruthy();
     });
   });
@@ -191,18 +200,45 @@ describe('Phase C: Render Smoke Tests', () => {
     });
 
     it('renders "Deleted X days ago" and contains no countdown or days left wording', async () => {
-      const pastDate = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
+      const pastDate5Days = new Date(Date.now() - (5 * 24 + 2) * 60 * 60 * 1000).toISOString();
       database.getDeletedCustomers.mockReturnValue([{
         customer_id: 1,
         name: 'Deleted John',
         phone_number: '9848012345',
-        deleted_at: pastDate,
+        deleted_at: pastDate5Days,
       }]);
       await customRender(<RecycleBinScreen navigation={mockNavigation} />);
-      const text = await screen.findByText(/Deleted \d+ days ago/);
+      const text = await screen.findByText('Deleted 5 days ago');
       expect(text).toBeTruthy();
       expect(screen.queryByText(/days left/i)).toBeNull();
+      expect(screen.queryByText(/countdown/i)).toBeNull();
       expect(screen.queryByText(/remaining/i)).toBeNull();
+    });
+
+    it('renders singular "Deleted 1 day ago" correctly', async () => {
+      const pastDate1Day = new Date(Date.now() - 26 * 60 * 60 * 1000).toISOString();
+      database.getDeletedCustomers.mockReturnValue([{
+        customer_id: 2,
+        name: 'Deleted Yesterday',
+        phone_number: '9848099999',
+        deleted_at: pastDate1Day,
+      }]);
+      await customRender(<RecycleBinScreen navigation={mockNavigation} />);
+      const text = await screen.findByText('Deleted 1 day ago');
+      expect(text).toBeTruthy();
+    });
+
+    it('renders "Deleted today" when 0 days elapsed', async () => {
+      const todayDate = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+      database.getDeletedCustomers.mockReturnValue([{
+        customer_id: 3,
+        name: 'Deleted Today User',
+        phone_number: '9848011223',
+        deleted_at: todayDate,
+      }]);
+      await customRender(<RecycleBinScreen navigation={mockNavigation} />);
+      const text = await screen.findByText('Deleted today');
+      expect(text).toBeTruthy();
     });
   });
 });

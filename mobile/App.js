@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, useNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -15,20 +15,36 @@ import SettingsScreen from './src/screens/SettingsScreen';
 import RecycleBinScreen from './src/screens/RecycleBinScreen';
 import EditCustomerScreen from './src/screens/EditCustomerScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
+import AboutScreen from './src/screens/AboutScreen';
+import {
+  setupNotificationChannelAsync,
+  rescheduleAllLicenseReminders,
+  registerNotificationResponseListener,
+} from './src/services/licenseNotifications';
 
 const Stack = createNativeStackNavigator();
 
 export default function App() {
   const [dbReady, setDbReady] = useState(false);
+  const navigationRef = useNavigationContainerRef();
 
   useEffect(() => {
     try {
       initDatabase();
       setDbReady(true);
+      setupNotificationChannelAsync();
+      rescheduleAllLicenseReminders();
     } catch (err) {
       console.error('Failed to initialize local SQLite database:', err);
     }
   }, []);
+
+  useEffect(() => {
+    const unsubscribe = registerNotificationResponseListener(navigationRef);
+    return () => {
+      if (typeof unsubscribe === 'function') unsubscribe();
+    };
+  }, [navigationRef]);
 
   if (!dbReady) {
     return (
@@ -40,7 +56,7 @@ export default function App() {
 
   return (
     <SafeAreaProvider style={{ backgroundColor: COLORS.background }}>
-      <NavigationContainer>
+      <NavigationContainer ref={navigationRef}>
         <Stack.Navigator
           initialRouteName="Home"
           screenOptions={{
@@ -58,6 +74,7 @@ export default function App() {
           <Stack.Screen name="Settings" component={SettingsScreen} />
           <Stack.Screen name="RecycleBin" component={RecycleBinScreen} />
           <Stack.Screen name="EditCustomer" component={EditCustomerScreen} />
+          <Stack.Screen name="About" component={AboutScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>

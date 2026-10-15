@@ -9,6 +9,7 @@
     "backgroundColor": "#FAF7F2",
     "android": {
       "package": "com.medtrack.mobile",
+      "versionCode": 2,
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "backgroundColor": "#FAF7F2",
@@ -26,7 +27,15 @@
     "plugins": [
       "expo-sqlite",
       "expo-sharing",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/android-icon-monochrome.png",
+          "color": "#B9533F",
+          "defaultChannel": "license-reminders"
+        }
+      ]
     ]
   }
 }

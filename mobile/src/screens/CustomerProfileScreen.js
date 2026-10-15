@@ -429,6 +429,7 @@ export default function CustomerProfileScreen({ route, navigation }) {
               <Text {...TEXT_PROPS} style={styles.sectionCount}>{ledger.length} record{ledger.length === 1 ? '' : 's'}</Text>
             </View>
             <FlatList
+              testID="customer-profile-list"
               data={ledger}
               keyExtractor={(item) => String(item.entry_id)}
               renderItem={renderLedgerItem}
@@ -440,6 +441,7 @@ export default function CustomerProfileScreen({ route, navigation }) {
         </View>
       ) : (
         <FlatList
+          testID="customer-profile-list"
           data={ledger}
           keyExtractor={(item) => String(item.entry_id)}
           renderItem={renderLedgerItem}
