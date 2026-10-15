@@ -26,7 +26,15 @@
     "plugins": [
       "expo-sqlite",
       "expo-sharing",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/android-icon-monochrome.png",
+          "color": "#B9533F",
+          "defaultChannel": "license-reminders"
+        }
+      ]
     ]
   }
 }

@@ -13,17 +13,20 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../constants/theme';
-import { searchCustomers } from '../db/database';
+import { searchCustomers, getShopProfile } from '../db/database';
 import { exportKhataBackup } from '../services/exportService';
 import { useResponsive, TEXT_PROPS } from '../utils/responsive';
 import { formatINR } from '../utils/formatUtils';
 import ScreenContainer from '../components/ScreenContainer';
+import { getLicenseStatus, formatLicenseDate } from '../utils/licenseReminders';
+import { rescheduleAllLicenseReminders } from '../services/licenseNotifications';
 
 export default function HomeScreen({ navigation }) {
   const [query, setQuery] = useState('');
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [licenseAlerts, setLicenseAlerts] = useState({ shop: null, pharmacist: null });
 
   const r = useResponsive();
   const insets = useSafeAreaInsets();
@@ -33,6 +36,39 @@ export default function HomeScreen({ navigation }) {
   const timerRef = useRef(null);
   const queryRef = useRef(query);
   queryRef.current = query;
+
+  const checkLicenseAlerts = useCallback(() => {
+    try {
+      const sp = getShopProfile();
+      if (!sp) {
+        setLicenseAlerts({ shop: null, pharmacist: null });
+        return;
+      }
+      const shopStatus = getLicenseStatus(sp.shop_license_validity);
+      const pharmStatus = getLicenseStatus(sp.pharmacist_license_validity);
+
+      setLicenseAlerts({
+        shop:
+          shopStatus.state === 'expired' || shopStatus.state === 'expiring'
+            ? {
+                status: shopStatus,
+                dateFormatted: formatLicenseDate(sp.shop_license_validity),
+              }
+            : null,
+        pharmacist:
+          pharmStatus.state === 'expired' || pharmStatus.state === 'expiring'
+            ? {
+                status: pharmStatus,
+                dateFormatted: formatLicenseDate(sp.pharmacist_license_validity),
+              }
+            : null,
+      });
+
+      rescheduleAllLicenseReminders(sp).catch(() => {});
+    } catch (e) {
+      console.warn('Error checking license alerts:', e);
+    }
+  }, []);
 
   const loadData = useCallback((skipDebounce = false) => {
     const q = queryRef.current;
@@ -87,11 +123,12 @@ export default function HomeScreen({ navigation }) {
   useFocusEffect(
     useCallback(() => {
       loadData(true);
+      checkLicenseAlerts();
       return () => {
         reqCounter.current++;
         if (timerRef.current) clearTimeout(timerRef.current);
       };
-    }, [loadData]) 
+    }, [loadData, checkLicenseAlerts]) 
   );
 
   const renderCustomerItem = ({ item }) => {
@@ -164,6 +201,127 @@ export default function HomeScreen({ navigation }) {
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* License Expiry Reminders */}
+      {(licenseAlerts.shop || licenseAlerts.pharmacist) && (
+        <View style={styles.licenseBannersContainer}>
+          {licenseAlerts.shop && (
+            <View
+              style={[
+                styles.licenseBannerCard,
+                licenseAlerts.shop.status.state === 'expired' || licenseAlerts.shop.status.isExpiringToday
+                  ? styles.licenseBannerExpired
+                  : styles.licenseBannerAmber,
+              ]}
+              testID="banner-license-shop"
+            >
+              <Ionicons
+                name={
+                  licenseAlerts.shop.status.state === 'expired' || licenseAlerts.shop.status.isExpiringToday
+                    ? 'alert-circle'
+                    : 'warning-outline'
+                }
+                size={r.scale(20)}
+                color={
+                  licenseAlerts.shop.status.state === 'expired' || licenseAlerts.shop.status.isExpiringToday
+                    ? '#C62828'
+                    : '#A15C07'
+                }
+                style={{ marginRight: r.scale(8) }}
+              />
+              <View style={{ flex: 1, marginRight: r.scale(8) }}>
+                <Text
+                  {...TEXT_PROPS}
+                  style={[
+                    styles.licenseBannerText,
+                    licenseAlerts.shop.status.state === 'expired' || licenseAlerts.shop.status.isExpiringToday
+                      ? styles.licenseBannerExpiredText
+                      : styles.licenseBannerAmberText,
+                  ]}
+                  numberOfLines={2}
+                >
+                  {licenseAlerts.shop.status.state === 'expired'
+                    ? `Drug License expired on ${licenseAlerts.shop.dateFormatted}`
+                    : licenseAlerts.shop.status.isExpiringToday
+                    ? `Drug License expires today (${licenseAlerts.shop.dateFormatted})`
+                    : `Drug License expires in ${licenseAlerts.shop.status.daysLeft} ${licenseAlerts.shop.status.daysLeft === 1 ? 'day' : 'days'} (${licenseAlerts.shop.dateFormatted})`}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[
+                  styles.licenseBannerBtn,
+                  licenseAlerts.shop.status.state === 'expired' || licenseAlerts.shop.status.isExpiringToday
+                    ? styles.licenseBannerExpiredBtn
+                    : styles.licenseBannerAmberBtn,
+                ]}
+                onPress={() => navigation.navigate('Profile')}
+                testID="btn-banner-shop-update"
+                activeOpacity={0.8}
+              >
+                <Text {...TEXT_PROPS} style={styles.licenseBannerBtnText}>Update</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {licenseAlerts.pharmacist && (
+            <View
+              style={[
+                styles.licenseBannerCard,
+                licenseAlerts.pharmacist.status.state === 'expired' || licenseAlerts.pharmacist.status.isExpiringToday
+                  ? styles.licenseBannerExpired
+                  : styles.licenseBannerAmber,
+              ]}
+              testID="banner-license-pharmacist"
+            >
+              <Ionicons
+                name={
+                  licenseAlerts.pharmacist.status.state === 'expired' || licenseAlerts.pharmacist.status.isExpiringToday
+                    ? 'alert-circle'
+                    : 'warning-outline'
+                }
+                size={r.scale(20)}
+                color={
+                  licenseAlerts.pharmacist.status.state === 'expired' || licenseAlerts.pharmacist.status.isExpiringToday
+                    ? '#C62828'
+                    : '#A15C07'
+                }
+                style={{ marginRight: r.scale(8) }}
+              />
+              <View style={{ flex: 1, marginRight: r.scale(8) }}>
+                <Text
+                  {...TEXT_PROPS}
+                  style={[
+                    styles.licenseBannerText,
+                    licenseAlerts.pharmacist.status.state === 'expired' || licenseAlerts.pharmacist.status.isExpiringToday
+                      ? styles.licenseBannerExpiredText
+                      : styles.licenseBannerAmberText,
+                  ]}
+                  numberOfLines={2}
+                >
+                  {licenseAlerts.pharmacist.status.state === 'expired'
+                    ? `Pharmacist Reg. expired on ${licenseAlerts.pharmacist.dateFormatted}`
+                    : licenseAlerts.pharmacist.status.isExpiringToday
+                    ? `Pharmacist Reg. expires today (${licenseAlerts.pharmacist.dateFormatted})`
+                    : `Pharmacist Reg. expires in ${licenseAlerts.pharmacist.status.daysLeft} ${licenseAlerts.pharmacist.status.daysLeft === 1 ? 'day' : 'days'} (${licenseAlerts.pharmacist.dateFormatted})`}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[
+                  styles.licenseBannerBtn,
+                  licenseAlerts.pharmacist.status.state === 'expired' || licenseAlerts.pharmacist.status.isExpiringToday
+                    ? styles.licenseBannerExpiredBtn
+                    : styles.licenseBannerAmberBtn,
+                ]}
+                onPress={() => navigation.navigate('Profile')}
+                testID="btn-banner-pharmacist-update"
+                activeOpacity={0.8}
+              >
+                <Text {...TEXT_PROPS} style={styles.licenseBannerBtnText}>Update</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      )}
 
       {/* Auto-focused Large Search Box */}
       <View style={styles.searchContainer}>
@@ -437,5 +595,57 @@ const makeStyles = (r, insets) => StyleSheet.create({
     fontSize: r.font(15),
     fontWeight: '600',
     color: COLORS.textInverted,
+  },
+  licenseBannersContainer: {
+    paddingHorizontal: r.moderate(20),
+    paddingTop: r.scale(2),
+    paddingBottom: r.scale(4),
+    gap: r.scale(8),
+  },
+  licenseBannerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: r.moderate(10),
+    paddingHorizontal: r.moderate(12),
+    paddingVertical: r.moderate(8),
+    borderWidth: 1,
+  },
+  licenseBannerAmber: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#FCD34D',
+  },
+  licenseBannerExpired: {
+    backgroundColor: '#FEE2E2',
+    borderColor: '#FCA5A5',
+  },
+  licenseBannerText: {
+    fontSize: r.font(12.5),
+    fontWeight: '600',
+    lineHeight: r.font(16),
+  },
+  licenseBannerAmberText: {
+    color: '#92400E',
+  },
+  licenseBannerExpiredText: {
+    color: '#991B1B',
+  },
+  licenseBannerBtn: {
+    paddingHorizontal: r.moderate(10),
+    paddingVertical: r.moderate(5),
+    borderRadius: r.moderate(6),
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: r.touch,
+  },
+  licenseBannerAmberBtn: {
+    backgroundColor: '#D97706',
+  },
+  licenseBannerExpiredBtn: {
+    backgroundColor: '#DC2626',
+  },
+  licenseBannerBtnText: {
+    color: '#FFFFFF',
+    fontSize: r.font(12),
+    fontWeight: '700',
   },
 });

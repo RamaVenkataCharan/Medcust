@@ -9,6 +9,7 @@ import {
   Platform,
   ScrollView,
   KeyboardAvoidingView,
+  Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,6 +23,12 @@ import {
   validateShopProfile,
   isLicenseExpired,
 } from '../utils/shopProfileValidation';
+import { getLicenseStatus } from '../utils/licenseReminders';
+import {
+  rescheduleAllLicenseReminders,
+  getNotificationPermissionStatusAsync,
+  requestNotificationPermissionAsync,
+} from '../services/licenseNotifications';
 
 export default function ProfileScreen({ navigation }) {
   const [profile, setProfile] = useState({
@@ -35,6 +42,7 @@ export default function ProfileScreen({ navigation }) {
   });
   const [errors, setErrors] = useState({});
   const [savingProfile, setSavingProfile] = useState(false);
+  const [permissionDenied, setPermissionDenied] = useState(false);
 
   const r = useResponsive();
   const insets = useSafeAreaInsets();
@@ -59,6 +67,22 @@ export default function ProfileScreen({ navigation }) {
     }
   }, []);
 
+  useEffect(() => {
+    (async () => {
+      try {
+        const perm = await getNotificationPermissionStatusAsync();
+        const hasDates = Boolean(
+          profile.shop_license_validity || profile.pharmacist_license_validity
+        );
+        if (!perm.granted && hasDates) {
+          setPermissionDenied(true);
+        } else if (perm.granted) {
+          setPermissionDenied(false);
+        }
+      } catch (e) {}
+    })();
+  }, [profile.shop_license_validity, profile.pharmacist_license_validity]);
+
   const handleProfileChange = (field, value) => {
     setProfile((prev) => ({ ...prev, [field]: value }));
     if (errors[field]) {
@@ -70,7 +94,7 @@ export default function ProfileScreen({ navigation }) {
     }
   };
 
-  const handleSaveProfile = () => {
+  const handleSaveProfile = async () => {
     const val = validateShopProfile(profile);
     if (!val.isValid) {
       setErrors(val.errors);
@@ -82,6 +106,49 @@ export default function ProfileScreen({ navigation }) {
     setSavingProfile(true);
     try {
       saveShopProfile(profile);
+      await rescheduleAllLicenseReminders(profile);
+
+      const hasValidityDates = Boolean(
+        (profile.shop_license_validity && profile.shop_license_validity.trim()) ||
+        (profile.pharmacist_license_validity && profile.pharmacist_license_validity.trim())
+      );
+
+      if (hasValidityDates && Platform.OS !== 'web') {
+        const perm = await getNotificationPermissionStatusAsync();
+        if (!perm.granted) {
+          Alert.alert(
+            'License Reminders',
+            'MedTrack needs permission to send local reminder notifications before your licenses expire.',
+            [
+              {
+                text: 'Not Now',
+                style: 'cancel',
+                onPress: () => {
+                  setPermissionDenied(true);
+                  Alert.alert('Saved', 'Shop and Pharmacist profile updated successfully.');
+                },
+              },
+              {
+                text: 'Enable Reminders',
+                onPress: async () => {
+                  const req = await requestNotificationPermissionAsync();
+                  if (!req.granted) {
+                    setPermissionDenied(true);
+                  } else {
+                    setPermissionDenied(false);
+                    await rescheduleAllLicenseReminders(profile);
+                  }
+                  Alert.alert('Saved', 'Shop and Pharmacist profile updated successfully.');
+                },
+              },
+            ]
+          );
+          return;
+        } else {
+          setPermissionDenied(false);
+        }
+      }
+
       Alert.alert('Saved', 'Shop and Pharmacist profile updated successfully.');
     } catch (err) {
       Alert.alert('Save Failed', err.message || 'Could not update profile.');
@@ -90,14 +157,17 @@ export default function ProfileScreen({ navigation }) {
     }
   };
 
-  const isShopExpired = useMemo(
-    () => isLicenseExpired(profile.shop_license_validity),
+  const shopLicenseStatus = useMemo(
+    () => getLicenseStatus(profile.shop_license_validity),
     [profile.shop_license_validity]
   );
-  const isPharmacistExpired = useMemo(
-    () => isLicenseExpired(profile.pharmacist_license_validity),
+  const pharmacistLicenseStatus = useMemo(
+    () => getLicenseStatus(profile.pharmacist_license_validity),
     [profile.pharmacist_license_validity]
   );
+
+  const isShopExpired = shopLicenseStatus.state === 'expired';
+  const isPharmacistExpired = pharmacistLicenseStatus.state === 'expired';
 
   return (
     <ScreenContainer>
@@ -172,9 +242,30 @@ export default function ProfileScreen({ navigation }) {
             <View style={styles.inputGroup}>
               <View style={styles.labelRow}>
                 <Text {...TEXT_PROPS} style={styles.inputLabel}>DL Validity Date</Text>
-                {isShopExpired && (
-                  <View style={styles.expiredBadge}>
+                {shopLicenseStatus.state === 'expired' && (
+                  <View style={styles.expiredBadge} testID="badge-shop-expired">
                     <Text {...TEXT_PROPS} style={styles.expiredBadgeText}>EXPIRED</Text>
+                  </View>
+                )}
+                {shopLicenseStatus.state === 'expiring' && (
+                  <View
+                    style={[
+                      styles.expiringBadge,
+                      shopLicenseStatus.isExpiringToday ? styles.expiredBadge : styles.expiringAmberBadge,
+                    ]}
+                    testID="badge-shop-expiring"
+                  >
+                    <Text
+                      {...TEXT_PROPS}
+                      style={[
+                        styles.expiringBadgeText,
+                        shopLicenseStatus.isExpiringToday ? styles.expiredBadgeText : styles.expiringAmberBadgeText,
+                      ]}
+                    >
+                      {shopLicenseStatus.isExpiringToday
+                        ? 'EXPIRES TODAY'
+                        : `Expires in ${shopLicenseStatus.daysLeft} ${shopLicenseStatus.daysLeft === 1 ? 'day' : 'days'}`}
+                    </Text>
                   </View>
                 )}
               </View>
@@ -233,9 +324,30 @@ export default function ProfileScreen({ navigation }) {
             <View style={styles.inputGroup}>
               <View style={styles.labelRow}>
                 <Text {...TEXT_PROPS} style={styles.inputLabel}>Pharmacist Reg. Validity Date</Text>
-                {isPharmacistExpired && (
-                  <View style={styles.expiredBadge}>
+                {pharmacistLicenseStatus.state === 'expired' && (
+                  <View style={styles.expiredBadge} testID="badge-pharmacist-expired">
                     <Text {...TEXT_PROPS} style={styles.expiredBadgeText}>EXPIRED</Text>
+                  </View>
+                )}
+                {pharmacistLicenseStatus.state === 'expiring' && (
+                  <View
+                    style={[
+                      styles.expiringBadge,
+                      pharmacistLicenseStatus.isExpiringToday ? styles.expiredBadge : styles.expiringAmberBadge,
+                    ]}
+                    testID="badge-pharmacist-expiring"
+                  >
+                    <Text
+                      {...TEXT_PROPS}
+                      style={[
+                        styles.expiringBadgeText,
+                        pharmacistLicenseStatus.isExpiringToday ? styles.expiredBadgeText : styles.expiringAmberBadgeText,
+                      ]}
+                    >
+                      {pharmacistLicenseStatus.isExpiringToday
+                        ? 'EXPIRES TODAY'
+                        : `Expires in ${pharmacistLicenseStatus.daysLeft} ${pharmacistLicenseStatus.daysLeft === 1 ? 'day' : 'days'}`}
+                    </Text>
                   </View>
                 )}
               </View>
@@ -252,6 +364,32 @@ export default function ProfileScreen({ navigation }) {
               )}
             </View>
           </View>
+
+          {/* Notification Permission Warning */}
+          {permissionDenied && (
+            <View style={styles.permissionNoteCard} testID="notifications-permission-note">
+              <View style={styles.permissionNoteContent}>
+                <Ionicons name="notifications-off-outline" size={r.scale(20)} color="#C62828" />
+                <View style={{ flex: 1 }}>
+                  <Text {...TEXT_PROPS} style={styles.permissionNoteText}>
+                    Notifications are off. Enable them in system settings to get reminders.
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={styles.openSettingsBtn}
+                onPress={() => {
+                  if (Platform.OS !== 'web') {
+                    Linking.openSettings();
+                  }
+                }}
+                testID="btn-open-notification-settings"
+                activeOpacity={0.8}
+              >
+                <Text {...TEXT_PROPS} style={styles.openSettingsBtnText}>Open Settings</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* Save Profile Button */}
           <TouchableOpacity
@@ -362,6 +500,54 @@ const makeStyles = (r, insets) => StyleSheet.create({
     fontSize: r.font(10),
     fontWeight: '700',
     color: '#C62828',
+  },
+  expiringBadge: {
+    paddingHorizontal: r.moderate(6),
+    paddingVertical: r.moderate(2),
+    borderRadius: r.moderate(4),
+    borderWidth: 1,
+  },
+  expiringAmberBadge: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#FCD34D',
+  },
+  expiringBadgeText: {
+    fontSize: r.font(10),
+    fontWeight: '700',
+  },
+  expiringAmberBadgeText: {
+    color: '#92400E',
+  },
+  permissionNoteCard: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    borderRadius: r.moderate(10),
+    padding: r.moderate(12),
+    gap: r.scale(10),
+  },
+  permissionNoteContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: r.scale(8),
+  },
+  permissionNoteText: {
+    fontSize: r.font(13),
+    color: '#991B1B',
+    lineHeight: r.font(18),
+    fontWeight: '500',
+  },
+  openSettingsBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#DC2626',
+    paddingHorizontal: r.moderate(12),
+    paddingVertical: r.moderate(6),
+    borderRadius: r.moderate(6),
+  },
+  openSettingsBtnText: {
+    color: '#FFFFFF',
+    fontSize: r.font(12),
+    fontWeight: '700',
   },
   errorText: {
     fontSize: r.font(11),
