@@ -1,5 +1,5 @@
 import { Platform, Alert } from 'react-native';
-import { exportAllData } from '../db/database';
+import { exportAllData, setAppMeta } from '../db/database';
 
 /**
  * Creates a complete JSON backup file and triggers download (Web) or native share sheet (Mobile).
@@ -22,6 +22,7 @@ export async function exportKhataBackup() {
         link.click();
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
+        setAppMeta('last_backup_exported_at', new Date().toISOString());
         Alert.alert('Backup Exported', `Downloaded ${fileName} (${data.customers?.length || 0} customers)`);
         return { success: true, count: data.customers?.length };
       }
@@ -47,8 +48,10 @@ export async function exportKhataBackup() {
         dialogTitle: 'Export MedTrack Khata Backup',
         UTI: 'public.json',
       });
+      setAppMeta('last_backup_exported_at', new Date().toISOString());
       return { success: true, count: data.customers?.length };
     } else {
+      setAppMeta('last_backup_exported_at', new Date().toISOString());
       Alert.alert(
         'Backup Created',
         `Backup file written to:\n${filePath}\n(Sharing is not supported on this device).`

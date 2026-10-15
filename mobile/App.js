@@ -15,6 +15,7 @@ import SettingsScreen from './src/screens/SettingsScreen';
 import RecycleBinScreen from './src/screens/RecycleBinScreen';
 import EditCustomerScreen from './src/screens/EditCustomerScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
+import AboutScreen from './src/screens/AboutScreen';
 import {
   setupNotificationChannelAsync,
   rescheduleAllLicenseReminders,
@@ -73,6 +74,7 @@ export default function App() {
           <Stack.Screen name="Settings" component={SettingsScreen} />
           <Stack.Screen name="RecycleBin" component={RecycleBinScreen} />
           <Stack.Screen name="EditCustomer" component={EditCustomerScreen} />
+          <Stack.Screen name="About" component={AboutScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>

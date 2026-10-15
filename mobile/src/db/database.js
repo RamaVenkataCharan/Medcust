@@ -67,6 +67,11 @@ function initNativeDatabase() {
     );
 
     INSERT OR IGNORE INTO shop_profile (id) VALUES (1);
+
+    CREATE TABLE IF NOT EXISTS app_metadata (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    );
   `);
 
   // Idempotent migration: Add 'note' column to entries if it doesn't exist
@@ -871,4 +876,66 @@ export async function permanentlyDeleteCustomer(customerId) {
     await db.runAsync(`DELETE FROM customers WHERE customer_id = ?;`, [numericId]);
   });
   return true;
+}
+
+// ─────────────────────────────────────────────────────────────
+// 5. LOCAL APP METADATA (Excluded from backups and restores)
+// ─────────────────────────────────────────────────────────────
+
+export function getAppMeta(key) {
+  if (!key) return null;
+
+  if (Platform.OS === 'web') {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        return window.localStorage.getItem(`medtrack_meta_${key}`);
+      }
+    } catch (e) {
+      console.warn('Error reading web app_meta:', e);
+    }
+    return null;
+  }
+
+  try {
+    const db = getNativeDb();
+    const row = db.getFirstSync(`SELECT value FROM app_metadata WHERE key = ?;`, [key]);
+    return row ? row.value : null;
+  } catch (e) {
+    console.warn(`Error reading app_meta for ${key}:`, e);
+    return null;
+  }
+}
+
+export function setAppMeta(key, value) {
+  if (!key) return;
+  const valStr = value === null || value === undefined ? null : String(value);
+
+  if (Platform.OS === 'web') {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        if (valStr === null) {
+          window.localStorage.removeItem(`medtrack_meta_${key}`);
+        } else {
+          window.localStorage.setItem(`medtrack_meta_${key}`, valStr);
+        }
+      }
+    } catch (e) {
+      console.warn('Error writing web app_meta:', e);
+    }
+    return;
+  }
+
+  try {
+    const db = getNativeDb();
+    if (valStr === null) {
+      db.runSync(`DELETE FROM app_metadata WHERE key = ?;`, [key]);
+    } else {
+      db.runSync(
+        `INSERT INTO app_metadata (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value;`,
+        [key, valStr]
+      );
+    }
+  } catch (e) {
+    console.warn(`Error setting app_meta for ${key}:`, e);
+  }
 }

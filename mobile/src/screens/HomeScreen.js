@@ -13,13 +13,16 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../constants/theme';
-import { searchCustomers, getShopProfile } from '../db/database';
+import { searchCustomers, getShopProfile, getAppMeta, setAppMeta } from '../db/database';
 import { exportKhataBackup } from '../services/exportService';
 import { useResponsive, TEXT_PROPS } from '../utils/responsive';
 import { formatINR } from '../utils/formatUtils';
 import ScreenContainer from '../components/ScreenContainer';
 import { getLicenseStatus, formatLicenseDate } from '../utils/licenseReminders';
 import { rescheduleAllLicenseReminders } from '../services/licenseNotifications';
+import { LEGAL_TEXT_VERSION } from '../constants/legalText';
+import FirstLaunchNoticeModal from '../components/FirstLaunchNoticeModal';
+import { shouldShowBackupReminder } from '../utils/backupReminder';
 
 export default function HomeScreen({ navigation }) {
   const [query, setQuery] = useState('');
@@ -27,6 +30,8 @@ export default function HomeScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [licenseAlerts, setLicenseAlerts] = useState({ shop: null, pharmacist: null });
+  const [showFirstLaunchNotice, setShowFirstLaunchNotice] = useState(false);
+  const [showBackupReminder, setShowBackupReminder] = useState(false);
 
   const r = useResponsive();
   const insets = useSafeAreaInsets();
@@ -69,6 +74,56 @@ export default function HomeScreen({ navigation }) {
       console.warn('Error checking license alerts:', e);
     }
   }, []);
+
+  const checkLegalAndBackupNotices = useCallback(() => {
+    try {
+      // 1. First-launch notice check
+      const acceptedVersion = getAppMeta('legal_terms_accepted_version');
+      if (acceptedVersion !== LEGAL_TEXT_VERSION) {
+        setShowFirstLaunchNotice(true);
+      } else {
+        setShowFirstLaunchNotice(false);
+      }
+
+      // 2. 14-day backup reminder check
+      const lastExportedAt = getAppMeta('last_backup_exported_at');
+      const dismissedAt = getAppMeta('backup_reminder_dismissed_at');
+      const needsReminder = shouldShowBackupReminder(lastExportedAt, dismissedAt);
+      setShowBackupReminder(needsReminder);
+    } catch (e) {
+      console.warn('Error checking legal/backup notices:', e);
+    }
+  }, []);
+
+  const handleAcceptFirstLaunchNotice = () => {
+    try {
+      setAppMeta('legal_terms_accepted_version', LEGAL_TEXT_VERSION);
+      setAppMeta('legal_terms_accepted_at', new Date().toISOString());
+      setShowFirstLaunchNotice(false);
+    } catch (e) {
+      setShowFirstLaunchNotice(false);
+    }
+  };
+
+  const handleDismissBackupReminder = () => {
+    try {
+      setAppMeta('backup_reminder_dismissed_at', new Date().toISOString());
+      setShowBackupReminder(false);
+    } catch (e) {
+      setShowBackupReminder(false);
+    }
+  };
+
+  const handleExportBackupFromBanner = async () => {
+    try {
+      const res = await exportKhataBackup();
+      if (res && res.success) {
+        setShowBackupReminder(false);
+      }
+    } catch (e) {
+      console.warn('Error exporting from banner:', e);
+    }
+  };
 
   const loadData = useCallback((skipDebounce = false) => {
     const q = queryRef.current;
@@ -124,11 +179,12 @@ export default function HomeScreen({ navigation }) {
     useCallback(() => {
       loadData(true);
       checkLicenseAlerts();
+      checkLegalAndBackupNotices();
       return () => {
         reqCounter.current++;
         if (timerRef.current) clearTimeout(timerRef.current);
       };
-    }, [loadData, checkLicenseAlerts]) 
+    }, [loadData, checkLicenseAlerts, checkLegalAndBackupNotices]) 
   );
 
   const renderCustomerItem = ({ item }) => {
@@ -173,6 +229,11 @@ export default function HomeScreen({ navigation }) {
 
   return (
     <ScreenContainer>
+      <FirstLaunchNoticeModal
+        visible={showFirstLaunchNotice}
+        onAccept={handleAcceptFirstLaunchNotice}
+      />
+
       {/* Notebook Header */}
       <View style={styles.header}>
         <View style={{ flex: 1, marginRight: r.moderate(8) }}>
@@ -320,6 +381,43 @@ export default function HomeScreen({ navigation }) {
               </TouchableOpacity>
             </View>
           )}
+        </View>
+      )}
+
+      {/* 14-day Backup Reminder Banner */}
+      {showBackupReminder && (
+        <View style={styles.backupReminderContainer}>
+          <View style={styles.backupReminderCard} testID="banner-backup-reminder">
+            <Ionicons
+              name="cloud-upload-outline"
+              size={r.scale(20)}
+              color="#1E40AF"
+              style={{ marginRight: r.scale(8) }}
+            />
+            <View style={{ flex: 1, marginRight: r.scale(8) }}>
+              <Text {...TEXT_PROPS} style={styles.backupReminderText}>
+                Your data is only on this phone. Export a backup.
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: r.scale(6) }}>
+              <TouchableOpacity
+                style={styles.backupReminderExportBtn}
+                onPress={handleExportBackupFromBanner}
+                testID="btn-backup-now"
+                activeOpacity={0.8}
+              >
+                <Text {...TEXT_PROPS} style={styles.backupReminderExportBtnText}>Export</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.backupReminderDismissBtn}
+                onPress={handleDismissBackupReminder}
+                testID="btn-dismiss-backup-reminder"
+                accessibilityLabel="Dismiss backup reminder"
+              >
+                <Ionicons name="close" size={r.scale(18)} color="#4B5563" />
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
       )}
 
@@ -647,5 +745,46 @@ const makeStyles = (r, insets) => StyleSheet.create({
     color: '#FFFFFF',
     fontSize: r.font(12),
     fontWeight: '700',
+  },
+  backupReminderContainer: {
+    paddingHorizontal: r.moderate(20),
+    paddingTop: r.scale(2),
+    paddingBottom: r.scale(4),
+  },
+  backupReminderCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: r.moderate(10),
+    paddingHorizontal: r.moderate(12),
+    paddingVertical: r.moderate(8),
+  },
+  backupReminderText: {
+    fontSize: r.font(12.5),
+    fontWeight: '600',
+    color: '#1E3A8A',
+    lineHeight: r.font(16),
+  },
+  backupReminderExportBtn: {
+    backgroundColor: '#2563EB',
+    paddingHorizontal: r.moderate(10),
+    paddingVertical: r.moderate(5),
+    borderRadius: r.moderate(6),
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: r.touch,
+  },
+  backupReminderExportBtnText: {
+    color: '#FFFFFF',
+    fontSize: r.font(12),
+    fontWeight: '700',
+  },
+  backupReminderDismissBtn: {
+    padding: r.moderate(4),
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: r.touch,
   },
 });

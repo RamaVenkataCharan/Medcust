@@ -153,6 +153,17 @@ export default function SettingsScreen({ navigation }) {
             <Ionicons name="trash-outline" size={r.scale(22)} color={COLORS.textPrimary} />
             <Text {...TEXT_PROPS} style={[styles.actionButtonText, { color: COLORS.textPrimary }]}>Recycle Bin</Text>
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionButton, styles.secondaryButton]}
+            activeOpacity={0.8}
+            onPress={() => navigation.navigate('About')}
+            disabled={exporting || restoring}
+            testID="btn-about"
+          >
+            <Ionicons name="information-circle-outline" size={r.scale(22)} color={COLORS.textPrimary} />
+            <Text {...TEXT_PROPS} style={[styles.actionButtonText, { color: COLORS.textPrimary }]}>About MedTrack</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </ScreenContainer>
