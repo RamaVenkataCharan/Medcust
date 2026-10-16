@@ -16,7 +16,11 @@
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
-      }
+      },
+      "blockedPermissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ]
     },
     "ios": {
       "supportsTablet": true
@@ -36,6 +40,17 @@
           "defaultChannel": "license-reminders"
         }
       ]
-    ]
+    ],
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FAF7F2"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "a68b63a4-9eaa-4ece-b425-31a34258a41e"
+      }
+    },
+    "owner": "cherry_999"
   }
 }
