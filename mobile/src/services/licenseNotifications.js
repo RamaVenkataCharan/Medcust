@@ -7,7 +7,7 @@
  */
 
 import { Platform } from 'react-native';
-import * as Notifications from 'expo-notifications';
+import { getNotificationsSafe, isNotificationSupported } from './notificationsSafe';
 import { getShopProfile } from '../db/database';
 import {
   buildReminderSchedule,
@@ -16,8 +16,18 @@ import {
 
 export const CHANNEL_ID = 'license-reminders';
 
-// Configure foreground presentation behavior (when app is in foreground)
-if (Platform.OS !== 'web') {
+export { isNotificationSupported };
+
+let notificationHandlerConfigured = false;
+
+/**
+ * Lazily configures foreground notification presentation behavior.
+ * Safe to call repeatedly; only executes once when Notifications module is available.
+ */
+function ensureNotificationHandler(Notifications) {
+  if (notificationHandlerConfigured || !Notifications || !Notifications.setNotificationHandler) {
+    return;
+  }
   try {
     Notifications.setNotificationHandler({
       handleNotification: async () => ({
@@ -26,6 +36,7 @@ if (Platform.OS !== 'web') {
         shouldSetBadge: false,
       }),
     });
+    notificationHandlerConfigured = true;
   } catch (e) {
     // Graceful fallback for non-native / test environments
   }
@@ -36,17 +47,26 @@ if (Platform.OS !== 'web') {
  * Inexact scheduling with DEFAULT importance; does not require exact-alarm permission.
  */
 export async function setupNotificationChannelAsync() {
-  if (Platform.OS !== 'android') return;
+  if (Platform.OS !== 'android') return { supported: false };
+  const Notifications = getNotificationsSafe();
+  if (!Notifications || !Notifications.setNotificationChannelAsync) {
+    return { supported: false };
+  }
+  ensureNotificationHandler(Notifications);
+
   try {
+    const importance = Notifications.AndroidImportance?.DEFAULT ?? 3;
     await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
       name: 'License Expiry Reminders',
-      importance: Notifications.AndroidImportance.DEFAULT,
+      importance,
       description: 'Reminders for Drug License and Pharmacist Registration expiration and renewals',
       enableVibrate: true,
       sound: 'default',
     });
+    return { supported: true, success: true };
   } catch (err) {
     console.warn('[licenseNotifications] Failed to setup notification channel:', err);
+    return { supported: true, success: false, error: err };
   }
 }
 
@@ -55,19 +75,25 @@ export async function setupNotificationChannelAsync() {
  * (identified by prefix "license-").
  */
 export async function cancelAllLicenseNotificationsAsync() {
-  if (Platform.OS === 'web') return;
+  const Notifications = getNotificationsSafe();
+  if (!Notifications || !Notifications.getAllScheduledNotificationsAsync) {
+    return { supported: false, cancelledCount: 0 };
+  }
   try {
     const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    let cancelledCount = 0;
     if (Array.isArray(scheduled)) {
       for (const item of scheduled) {
         const id = item?.identifier;
         if (id && String(id).startsWith('license-')) {
           await Notifications.cancelScheduledNotificationAsync(id);
+          cancelledCount++;
         }
       }
     }
+    return { supported: true, cancelledCount };
   } catch (err) {
-    // Graceful fallback for unmocked headless/test environments
+    return { supported: true, cancelledCount: 0, error: err };
   }
 }
 
@@ -75,16 +101,20 @@ export async function cancelAllLicenseNotificationsAsync() {
  * Returns current notification permission status.
  */
 export async function getNotificationPermissionStatusAsync() {
-  if (Platform.OS === 'web') return { granted: false, canAskAgain: false };
+  const Notifications = getNotificationsSafe();
+  if (!Notifications || !Notifications.getPermissionsAsync) {
+    return { granted: false, canAskAgain: false, supported: false };
+  }
   try {
     const settings = await Notifications.getPermissionsAsync();
     return {
       granted: Boolean(settings.granted || settings.status === 'granted'),
       canAskAgain: settings.canAskAgain !== false,
       status: settings.status,
+      supported: true,
     };
   } catch (err) {
-    return { granted: false, canAskAgain: false };
+    return { granted: false, canAskAgain: false, supported: true, error: err };
   }
 }
 
@@ -92,7 +122,10 @@ export async function getNotificationPermissionStatusAsync() {
  * Requests notification permission from the user (Android 13+ / iOS).
  */
 export async function requestNotificationPermissionAsync() {
-  if (Platform.OS === 'web') return { granted: false };
+  const Notifications = getNotificationsSafe();
+  if (!Notifications || !Notifications.requestPermissionsAsync) {
+    return { granted: false, supported: false };
+  }
   try {
     const result = await Notifications.requestPermissionsAsync({
       ios: {
@@ -104,9 +137,10 @@ export async function requestNotificationPermissionAsync() {
     return {
       granted: Boolean(result.granted || result.status === 'granted'),
       status: result.status,
+      supported: true,
     };
   } catch (err) {
-    return { granted: false };
+    return { granted: false, supported: true, error: err };
   }
 }
 
@@ -115,22 +149,25 @@ export async function requestNotificationPermissionAsync() {
  * Total scheduled notifications capped at about 40 across both licenses to avoid OS limits.
  * 
  * @param {object} [customProfile] - Optional profile override
- * @returns {Promise<{ scheduledCount: number }>}
+ * @returns {Promise<{ scheduledCount: number, supported: boolean }>}
  */
 export async function rescheduleAllLicenseReminders(customProfile) {
-  if (Platform.OS === 'web') {
-    return { scheduledCount: 0 };
+  const Notifications = getNotificationsSafe();
+  if (!Notifications || !Notifications.scheduleNotificationAsync) {
+    return { scheduledCount: 0, supported: false };
   }
+  ensureNotificationHandler(Notifications);
 
   try {
     await setupNotificationChannelAsync();
     await cancelAllLicenseNotificationsAsync();
 
     const profile = customProfile || getShopProfile();
-    if (!profile) return { scheduledCount: 0 };
+    if (!profile) return { scheduledCount: 0, supported: true };
 
     let totalScheduled = 0;
     const now = new Date();
+    const triggerType = Notifications.SchedulableTriggerInputTypes?.DATE ?? 'date';
 
     // 1. Drug License (shop_license_validity) - capped at 20 reminders
     if (profile.shop_license_validity) {
@@ -148,7 +185,7 @@ export async function rescheduleAllLicenseReminders(customProfile) {
             sound: true,
           },
           trigger: {
-            type: Notifications.SchedulableTriggerInputTypes.DATE,
+            type: triggerType,
             date: triggerDate,
             channelId: CHANNEL_ID,
           },
@@ -173,7 +210,7 @@ export async function rescheduleAllLicenseReminders(customProfile) {
             sound: true,
           },
           trigger: {
-            type: Notifications.SchedulableTriggerInputTypes.DATE,
+            type: triggerType,
             date: triggerDate,
             channelId: CHANNEL_ID,
           },
@@ -182,10 +219,10 @@ export async function rescheduleAllLicenseReminders(customProfile) {
       }
     }
 
-    return { scheduledCount: totalScheduled };
+    return { scheduledCount: totalScheduled, supported: true };
   } catch (err) {
     console.warn('[licenseNotifications] Error during rescheduleAllLicenseReminders:', err);
-    return { scheduledCount: 0 };
+    return { scheduledCount: 0, supported: true, error: err };
   }
 }
 
@@ -193,7 +230,12 @@ export async function rescheduleAllLicenseReminders(customProfile) {
  * Listens for notification interaction responses and navigates to the Shop Profile screen.
  */
 export function registerNotificationResponseListener(navigationRef) {
-  if (Platform.OS === 'web') return () => {};
+  const Notifications = getNotificationsSafe();
+  if (!Notifications || !Notifications.addNotificationResponseReceivedListener) {
+    return () => {};
+  }
+  ensureNotificationHandler(Notifications);
+
   try {
     const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
       const screen = response?.notification?.request?.content?.data?.screen;
