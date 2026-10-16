@@ -262,7 +262,7 @@ describe('Home Screen FAB Pop Feature Audit', () => {
 
     const fabBtn = screen.getByTestId('home-fab-add-customer');
     expect(fabBtn).toBeTruthy();
-    expect(screen.getByText('+ Add Customer')).toBeTruthy();
+    expect(screen.getByText('Add Customer')).toBeTruthy();
     motionSpy.mockRestore();
   });
 });

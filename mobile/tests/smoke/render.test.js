@@ -95,7 +95,7 @@ describe('Phase C: Render Smoke Tests', () => {
       expect(badge).toBeTruthy();
     });
 
-    it('finds the "+ Add Customer" button by its label and navigates to Add Customer on press', async () => {
+    it('finds the "Add Customer" button by its label and navigates to Add Customer on press', async () => {
       const timingSpy = jest.spyOn(Animated, 'timing').mockImplementation((val, config) => ({
         start: (cb) => {
           if (val && config && typeof config.toValue !== 'undefined') {
@@ -121,7 +121,7 @@ describe('Phase C: Render Smoke Tests', () => {
 
       const addBtn = screen.getByLabelText('Add customer');
       expect(addBtn).toBeTruthy();
-      expect(screen.getByText('+ Add Customer')).toBeTruthy();
+      expect(screen.getByText('Add Customer')).toBeTruthy();
 
       fireEvent.press(addBtn);
       expect(mockNavigation.navigate).toHaveBeenCalledWith('AddCustomer', { initialPhoneOrName: '' });

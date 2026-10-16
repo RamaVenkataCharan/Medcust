@@ -640,10 +640,12 @@ export default function HomeScreen({ navigation }) {
           </Text>
           <TouchableOpacity
             style={styles.addCustomerEmptyBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Add customer"
             onPress={() => navigation.navigate('AddCustomer', { initialPhoneOrName: query.trim() })}
           >
-            <Ionicons name="person-add-outline" size={r.scale(20)} color={COLORS.textInverted} />
-            <Text {...TEXT_PROPS} style={styles.addCustomerEmptyBtnText}>+ Add Customer</Text>
+            <Ionicons name="person-outline" size={r.scale(20)} color={COLORS.textInverted} />
+            <Text {...TEXT_PROPS} style={styles.addCustomerEmptyBtnText}>Add Customer</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -683,7 +685,7 @@ export default function HomeScreen({ navigation }) {
           onPressOut={handlePressOut}
           onPress={() => navigation.navigate('AddCustomer', { initialPhoneOrName: query.trim() })}
         >
-          <Ionicons name="person-add" size={r.scale(20)} color={COLORS.textInverted} />
+          <Ionicons name="person" size={r.scale(20)} color={COLORS.textInverted} />
           <Animated.View
             style={
               reduceMotion
@@ -702,7 +704,7 @@ export default function HomeScreen({ navigation }) {
                   }
             }
           >
-            <Text {...TEXT_PROPS} style={styles.fabText}>+ Add Customer</Text>
+            <Text {...TEXT_PROPS} style={styles.fabText}>Add Customer</Text>
           </Animated.View>
         </AnimatedTouchableOpacity>
       )}
