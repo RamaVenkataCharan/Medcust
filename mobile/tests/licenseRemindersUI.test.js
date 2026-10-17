@@ -216,5 +216,32 @@ describe('License Expiry Reminders UI Tests', () => {
 
       alertSpy.mockRestore();
     });
+
+    test('displays neutral note and suppresses permission warning when notifications are unsupported', async () => {
+      const { setNotificationsMockForTesting, resetNotificationsSafeForTesting } = require('../src/services/notificationsSafe');
+      setNotificationsMockForTesting(null);
+
+      database.getShopProfile.mockReturnValue({
+        shop_name: 'MedTrack Pharmacy',
+        shop_license_validity: getDateOffset(-10),
+      });
+
+      const { getByTestId, queryByTestId, getByText } = await renderWithProviders(
+        <ProfileScreen navigation={mockNavigation} />
+      );
+
+      await waitFor(() => {
+        expect(getByTestId('notifications-unsupported-note')).toBeTruthy();
+        expect(getByText('Reminders need the installed app; they are not available in Expo Go')).toBeTruthy();
+      });
+
+      // Banners / Badges still work
+      expect(getByTestId('badge-shop-expired')).toBeTruthy();
+
+      // Permission note must NOT be rendered when unsupported
+      expect(queryByTestId('notifications-permission-note')).toBeNull();
+
+      resetNotificationsSafeForTesting();
+    });
   });
 });

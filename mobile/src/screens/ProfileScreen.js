@@ -28,6 +28,7 @@ import {
   rescheduleAllLicenseReminders,
   getNotificationPermissionStatusAsync,
   requestNotificationPermissionAsync,
+  isNotificationSupported,
 } from '../services/licenseNotifications';
 
 export default function ProfileScreen({ navigation }) {
@@ -71,6 +72,10 @@ export default function ProfileScreen({ navigation }) {
     (async () => {
       try {
         const perm = await getNotificationPermissionStatusAsync();
+        if (perm.supported === false) {
+          setPermissionDenied(false);
+          return;
+        }
         const hasDates = Boolean(
           profile.shop_license_validity || profile.pharmacist_license_validity
         );
@@ -113,7 +118,7 @@ export default function ProfileScreen({ navigation }) {
         (profile.pharmacist_license_validity && profile.pharmacist_license_validity.trim())
       );
 
-      if (hasValidityDates && Platform.OS !== 'web') {
+      if (hasValidityDates && isNotificationSupported() && Platform.OS !== 'web') {
         const perm = await getNotificationPermissionStatusAsync();
         if (!perm.granted) {
           Alert.alert(
@@ -365,8 +370,24 @@ export default function ProfileScreen({ navigation }) {
             </View>
           </View>
 
+          {/* Unsupported Notification Note (Expo Go / Web) */}
+          {!isNotificationSupported() && (
+            <View style={styles.unsupportedNoteCard} testID="notifications-unsupported-note">
+              <Ionicons
+                name="information-circle-outline"
+                size={r.scale(20)}
+                color={COLORS.textSecondary}
+              />
+              <View style={{ flex: 1 }}>
+                <Text {...TEXT_PROPS} style={styles.unsupportedNoteText}>
+                  Reminders need the installed app; they are not available in Expo Go
+                </Text>
+              </View>
+            </View>
+          )}
+
           {/* Notification Permission Warning */}
-          {permissionDenied && (
+          {isNotificationSupported() && permissionDenied && (
             <View style={styles.permissionNoteCard} testID="notifications-permission-note">
               <View style={styles.permissionNoteContent}>
                 <Ionicons name="notifications-off-outline" size={r.scale(20)} color="#C62828" />
@@ -517,6 +538,22 @@ const makeStyles = (r, insets) => StyleSheet.create({
   },
   expiringAmberBadgeText: {
     color: '#92400E',
+  },
+  unsupportedNoteCard: {
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: r.moderate(10),
+    padding: r.moderate(12),
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: r.scale(8),
+  },
+  unsupportedNoteText: {
+    fontSize: r.font(13),
+    color: COLORS.textSecondary,
+    lineHeight: r.font(18),
+    fontWeight: '500',
   },
   permissionNoteCard: {
     backgroundColor: '#FEF2F2',

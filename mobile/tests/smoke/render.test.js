@@ -1,5 +1,6 @@
 import React from 'react';
-import { render, waitFor, screen } from '@testing-library/react-native';
+import { Animated } from 'react-native';
+import { render, waitFor, screen, fireEvent, act } from '@testing-library/react-native';
 import HomeScreen from '../../src/screens/HomeScreen';
 import AddCustomerScreen from '../../src/screens/AddCustomerScreen';
 import EditCustomerScreen from '../../src/screens/EditCustomerScreen';
@@ -92,6 +93,41 @@ describe('Phase C: Render Smoke Tests', () => {
       await customRender(<HomeScreen navigation={mockNavigation} />);
       const badge = await screen.findByText('₹150.00 credit');
       expect(badge).toBeTruthy();
+    });
+
+    it('finds the "Add Customer" button by its label and navigates to Add Customer on press', async () => {
+      const timingSpy = jest.spyOn(Animated, 'timing').mockImplementation((val, config) => ({
+        start: (cb) => {
+          if (val && config && typeof config.toValue !== 'undefined') {
+            val.setValue(config.toValue);
+          }
+          if (cb) cb({ finished: true });
+        },
+        stop: () => {},
+      }));
+      const springSpy = jest.spyOn(Animated, 'spring').mockImplementation((val, config) => ({
+        start: (cb) => {
+          if (val && config && typeof config.toValue !== 'undefined') {
+            val.setValue(config.toValue);
+          }
+          if (cb) cb({ finished: true });
+        },
+        stop: () => {},
+      }));
+
+      database.getAllCustomers.mockReturnValue([{ customer_id: 1, name: 'John Doe', phone_number: '1234567890', total_due: 0 }]);
+      database.searchCustomers.mockReturnValue([{ customer_id: 1, name: 'John Doe', phone_number: '1234567890', total_due: 0 }]);
+      await customRender(<HomeScreen navigation={mockNavigation} />);
+
+      const addBtn = screen.getByLabelText('Add customer');
+      expect(addBtn).toBeTruthy();
+      expect(screen.getByText('Add Customer')).toBeTruthy();
+
+      fireEvent.press(addBtn);
+      expect(mockNavigation.navigate).toHaveBeenCalledWith('AddCustomer', { initialPhoneOrName: '' });
+
+      timingSpy.mockRestore();
+      springSpy.mockRestore();
     });
   });
 
